@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
 import { Suspense } from "react"
+import { BackendStatus } from "@/components/backend-status"
 
 export const metadata: Metadata = {
   title: "SafeOutdoor - AI-Powered Outdoor Safety Advisor",
@@ -22,6 +23,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable} antialiased`}>
         <Suspense fallback={null}>{children}</Suspense>
+        <BackendStatus />
         <Analytics />
       </body>
     </html>
