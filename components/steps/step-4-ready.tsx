@@ -16,7 +16,15 @@ interface Step4ReadyProps {
 export function Step4Ready({ adventureContext, safetyAnalysis, onRestart }: Step4ReadyProps) {
   if (!safetyAnalysis || !adventureContext) return null
 
-  const { score, overallSafety, recommendedTime, emergencyInfo, satelliteData, healthData } = safetyAnalysis
+  const { score, recommendedTime, emergencyInfo, satelliteData, healthData } = safetyAnalysis
+  
+  // Safely access overallSafety with fallbacks
+  const safetyData = safetyAnalysis.overallSafety || {
+    environmental: score ? Math.round(score / 10) : 8,
+    health: score ? Math.round(score / 10) : 8,
+    terrain: 8,
+    overall: score ? score / 10 : 8
+  }
 
   const getScoreColor = (score: number) => {
     if (score >= 8) return "text-success"
@@ -134,16 +142,16 @@ export function Step4Ready({ adventureContext, safetyAnalysis, onRestart }: Step
                   <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                     <span className="text-sm">Environmental Safety</span>
                     <Badge className="bg-success/10 text-success border-success/20">
-                      {overallSafety.environmental}/10
+                      {safetyData.environmental}/10
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                     <span className="text-sm">Health Considerations</span>
-                    <Badge className="bg-success/10 text-success border-success/20">{overallSafety.health}/10</Badge>
+                    <Badge className="bg-success/10 text-success border-success/20">{safetyData.health}/10</Badge>
                   </div>
                   <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                     <span className="text-sm">Terrain Difficulty</span>
-                    <Badge className="bg-success/10 text-success border-success/20">{overallSafety.terrain}/10</Badge>
+                    <Badge className="bg-success/10 text-success border-success/20">{safetyData.terrain}/10</Badge>
                   </div>
                 </div>
               </div>

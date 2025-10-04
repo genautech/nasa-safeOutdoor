@@ -60,11 +60,20 @@ class ChecklistItemResponse(BaseModel):
     category: str
 
 
+class OverallSafetyResponse(BaseModel):
+    """Overall safety breakdown scores."""
+    environmental: float
+    health: float
+    terrain: float
+    overall: float
+
+
 class AnalyzeResponse(BaseModel):
     """Complete analysis response."""
     request_id: str
     risk_score: float
     category: str
+    overallSafety: OverallSafetyResponse
     air_quality: AirQualityResponse
     weather_forecast: List[WeatherHourResponse]
     elevation: dict
@@ -337,11 +346,47 @@ async def analyze_adventure(request: Request, req: AnalyzeRequest):
             current_weather
         )
         
-        # Step 7: Build complete response
+        # Step 7: Calculate detailed safety breakdown
+        aqi_value = openaq_data.get("pm25", 50) if openaq_data else 50
+        elevation_m = elevation_data.get("elevation_m", 100)
+        
+        # Environmental score based on AQI (inverse relationship)
+        environmental_score = max(0, min(10, (100 - aqi_value) / 10))
+        
+        # Health score from risk calculation
+        health_score = risk_data["score"]
+        
+        # Terrain score based on elevation and activity
+        if elevation_m < 1000:
+            terrain_score = 9.0
+        elif elevation_m < 2000:
+            terrain_score = 7.5
+        elif elevation_m < 3000:
+            terrain_score = 6.0
+        else:
+            terrain_score = 4.5
+        
+        # Overall score (weighted average)
+        overall_score = (environmental_score * 0.3 + health_score * 0.5 + terrain_score * 0.2)
+        
+        overall_safety = OverallSafetyResponse(
+            environmental=round(environmental_score, 1),
+            health=round(health_score, 1),
+            terrain=round(terrain_score, 1),
+            overall=round(overall_score, 1)
+        )
+        
+        logger.info(
+            f"[{request_id}] Safety breakdown: env={overall_safety.environmental}, "
+            f"health={overall_safety.health}, terrain={overall_safety.terrain}"
+        )
+        
+        # Step 8: Build complete response
         response = AnalyzeResponse(
             request_id=request_id,
             risk_score=risk_data["score"],
             category=risk_data["category"],
+            overallSafety=overall_safety,
             air_quality=AirQualityResponse(
                 aqi=aqi,
                 category=aqi_category,

@@ -48,6 +48,12 @@ export interface AnalyzeResponse {
   request_id: string;
   risk_score: number;
   category: string;
+  overallSafety: {
+    environmental: number;
+    health: number;
+    terrain: number;
+    overall: number;
+  };
   air_quality: {
     aqi: number;
     category: string;
