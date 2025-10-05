@@ -91,26 +91,36 @@ class TEMPOService:
                 now = datetime.utcnow()
                 start = now - timedelta(hours=24)
                 
-                logger.debug(f"🔍 Searching TEMPO granules at ({lat:.4f}, {lon:.4f}) bbox={bbox}")
+                logger.info(f"🔍 Searching TEMPO granules at ({lat:.4f}, {lon:.4f}) bbox={bbox}")
                 
                 # Search for TEMPO NO2 L3 data
-                results = earthaccess.search_data(
-                    short_name=TEMPOService.SHORT_NAME,
-                    version=TEMPOService.VERSION,
-                    temporal=(start.isoformat(), now.isoformat()),
-                    bounding_box=bbox,
-                    count=1
-                )
+                try:
+                    results = earthaccess.search_data(
+                        short_name=TEMPOService.SHORT_NAME,
+                        version=TEMPOService.VERSION,
+                        temporal=(start.isoformat(), now.isoformat()),
+                        bounding_box=bbox,
+                        count=1
+                    )
+                    logger.info(f"🔍 Search returned {len(results) if results else 0} results")
+                except Exception as e:
+                    logger.error(f"❌ Search failed: {e}")
+                    return None
                 
                 if not results:
-                    logger.info("No recent TEMPO granules found")
+                    logger.warning("⚠️ No recent TEMPO granules found")
                     return None
                 
                 logger.info(f"✅ Found {len(results)} TEMPO granule(s)")
                 
                 # Open first granule with streaming (NO DOWNLOAD!)
-                logger.debug(f"📡 Opening TEMPO granule with streaming...")
-                fileset = earthaccess.open(results[0:1])
+                logger.info(f"📡 Opening TEMPO granule with streaming...")
+                try:
+                    fileset = earthaccess.open(results[0:1])
+                    logger.info(f"✅ earthaccess.open() returned: {type(fileset)}")
+                except Exception as e:
+                    logger.error(f"❌ earthaccess.open() failed: {e}")
+                    return None
                 
                 if not fileset:
                     logger.error("❌ Failed to open TEMPO granule")
@@ -178,9 +188,16 @@ class TEMPOService:
                     "pixel_lon": actual_lon
                 }
             
-            # Run blocking earthaccess code in executor
-            result = await loop.run_in_executor(None, search_and_extract)
-            return result
+            # Run blocking earthaccess code in executor with timeout
+            try:
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(None, search_and_extract),
+                    timeout=30.0  # 30 seconds timeout
+                )
+                return result
+            except asyncio.TimeoutError:
+                logger.error("❌ TEMPO extraction timeout (30s)")
+                return None
             
         except ImportError as e:
             logger.error(f"❌ Required libraries not installed: {e}")
