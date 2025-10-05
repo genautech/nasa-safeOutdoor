@@ -7,6 +7,11 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_FILE = BASE_DIR / ".env"
 
+# DEBUG: Print env file path
+import sys
+print(f"🔍 DEBUG: ENV_FILE path = {ENV_FILE}", file=sys.stderr)
+print(f"🔍 DEBUG: ENV_FILE exists = {ENV_FILE.exists()}", file=sys.stderr)
+
 
 class Settings(BaseSettings):
     """Application settings with validation."""
@@ -58,3 +63,8 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+# DEBUG: Print loaded settings
+print(f"🔍 DEBUG: OpenAQ key loaded = {'Yes' if settings.openaq_api_key else 'No'}", file=sys.stderr)
+print(f"🔍 DEBUG: NASA user loaded = {'Yes' if settings.nasa_earthdata_user else 'No'}", file=sys.stderr)
+print(f"🔍 DEBUG: OpenAI key loaded = {'Yes' if settings.openai_api_key else 'No'}", file=sys.stderr)
