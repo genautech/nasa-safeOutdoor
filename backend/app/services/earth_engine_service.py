@@ -6,7 +6,7 @@ Cobertura global com dados precisos e em tempo real.
 """
 import logging
 from typing import Optional, Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 import ee
 from app.config import settings
 
@@ -91,6 +91,10 @@ class EarthEngineService:
             if date is None:
                 date = datetime.utcnow().strftime('%Y-%m-%d')
             
+            # Earth Engine precisa de range (início e fim diferentes)
+            date_obj = datetime.strptime(date, '%Y-%m-%d')
+            end_date = (date_obj + timedelta(days=1)).strftime('%Y-%m-%d')
+            
             # Criar geometria (ponto + buffer)
             point = ee.Geometry.Point([lon, lat])
             area = point.buffer(radius_km * 1000)  # km → metros
@@ -98,8 +102,8 @@ class EarthEngineService:
             # Dataset TEMPO NO2 (filtrado por qualidade)
             tempo = ee.ImageCollection('NASA/TEMPO/NO2_L3_QA')
             
-            # Filtrar por data e região
-            images = tempo.filterDate(date, date).filterBounds(area)
+            # Filtrar por data e região (range de date até end_date)
+            images = tempo.filterDate(date, end_date).filterBounds(area)
             
             # Verificar se há dados
             count = images.size().getInfo()
@@ -177,6 +181,10 @@ class EarthEngineService:
             if date is None:
                 date = datetime.utcnow().strftime('%Y-%m-%d')
             
+            # Earth Engine precisa de range (início e fim diferentes)
+            date_obj = datetime.strptime(date, '%Y-%m-%d')
+            end_date = (date_obj + timedelta(days=1)).strftime('%Y-%m-%d')
+            
             # Criar geometria
             point = ee.Geometry.Point([lon, lat])
             area = point.buffer(radius_km * 1000)
@@ -184,8 +192,8 @@ class EarthEngineService:
             # Dataset Sentinel-5P NO2
             s5p = ee.ImageCollection('COPERNICUS/S5P/NRTI/L3_NO2')
             
-            # Filtrar por data e região
-            images = s5p.filterDate(date, date).filterBounds(area)
+            # Filtrar por data e região (range de date até end_date)
+            images = s5p.filterDate(date, end_date).filterBounds(area)
             
             count = images.size().getInfo()
             if count == 0:
