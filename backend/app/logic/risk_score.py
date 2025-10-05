@@ -78,10 +78,24 @@ def calculate_safety_score(data: dict) -> dict:
     TERRAIN_WEIGHT = 0.08       # Minimal impact below 2500m for most activities
     
     # Calculate sub-scores (0-10 scale)
+    logger.info("=== SAFETY SCORE CALCULATION DEBUG ===")
+    logger.info(f"Input AQI: {data.get('aqi', 'N/A')}")
+    logger.info(f"Input PM2.5: {data.get('pm25', 'N/A')}")
+    logger.info(f"Input Weather: {data.get('weather', {})}")
+    logger.info(f"Input UV: {data.get('uv_index', 'N/A')}")
+    logger.info(f"Input Elevation: {data.get('elevation', 'N/A')}")
+    logger.info(f"Input Activity: {data.get('activity', 'N/A')}")
+    
     air_score = calculate_air_quality_score(data.get("aqi", 50), data.get("pm25", 15.0))
     weather_score = calculate_weather_score(data.get("weather", {}))
     uv_score = calculate_uv_score(data.get("uv_index", 5.0))
     terrain_score = calculate_terrain_score(data.get("elevation", 0), data.get("activity", "hiking"))
+    
+    logger.info("=== SUB-SCORES (0-10 scale) ===")
+    logger.info(f"Air Quality Score: {air_score:.2f}")
+    logger.info(f"Weather Score: {weather_score:.2f}")
+    logger.info(f"UV Score: {uv_score:.2f}")
+    logger.info(f"Terrain Score: {terrain_score:.2f}")
     
     # Weighted average (evidence-based formula)
     total = (
@@ -91,13 +105,19 @@ def calculate_safety_score(data: dict) -> dict:
         terrain_score * TERRAIN_WEIGHT
     )
     
+    logger.info("=== WEIGHTED CALCULATION ===")
+    logger.info(f"Air: {air_score:.2f} × 0.50 = {air_score * AIR_QUALITY_WEIGHT:.2f}")
+    logger.info(f"Weather: {weather_score:.2f} × 0.30 = {weather_score * WEATHER_WEIGHT:.2f}")
+    logger.info(f"UV: {uv_score:.2f} × 0.12 = {uv_score * UV_WEIGHT:.2f}")
+    logger.info(f"Terrain: {terrain_score:.2f} × 0.08 = {terrain_score * TERRAIN_WEIGHT:.2f}")
+    logger.info(f"Sum: {total:.2f}")
+    
     # Clamp to 0-10 range
     total = max(0.0, min(10.0, total))
     
     # Log breakdown for transparency
     logger.info(
-        f"Score breakdown: Air={air_score:.1f}(50%), Weather={weather_score:.1f}(30%), "
-        f"UV={uv_score:.1f}(12%), Terrain={terrain_score:.1f}(8%) → Total={total:.1f}/10"
+        f"=== FINAL RESULT: {total:.1f}/10 ({total*10:.0f}/100) ==="
     )
     
     # Determine category (aligned with EPA AQI categories)
@@ -160,18 +180,32 @@ def calculate_air_quality_score(aqi: int, pm25: float) -> float:
     """
     # Primary: Use AQI if available
     if aqi is not None and aqi > 0:
-    if aqi <= 50:
-            return 10.0 - (aqi / 50.0 * 0.5)
-    elif aqi <= 100:
-            return 8.0 - ((aqi - 50) / 50.0 * 1.2)
-    elif aqi <= 150:
-            return 5.5 - ((aqi - 100) / 50.0 * 1.5)
-    elif aqi <= 200:
-            return 3.5 - ((aqi - 150) / 50.0 * 1.5)
-    elif aqi <= 300:
-            return 1.5 - ((aqi - 200) / 100.0 * 1.0)
+        logger.info(f"Calculating air quality score for AQI={aqi}")
+        
+        if aqi <= 50:
+            score = 10.0 - (aqi / 50.0 * 0.5)
+            logger.info(f"AQI {aqi} (Good): score={score:.2f}")
+            return score
+        elif aqi <= 100:
+            score = 8.0 - ((aqi - 50) / 50.0 * 1.2)
+            logger.info(f"AQI {aqi} (Moderate): score={score:.2f}")
+            return score
+        elif aqi <= 150:
+            score = 5.5 - ((aqi - 100) / 50.0 * 1.5)
+            logger.info(f"AQI {aqi} (Unhealthy for Sensitive): score={score:.2f}")
+            return score
+        elif aqi <= 200:
+            score = 3.5 - ((aqi - 150) / 50.0 * 1.5)
+            logger.info(f"AQI {aqi} (Unhealthy): score={score:.2f}")
+            return score
+        elif aqi <= 300:
+            score = 1.5 - ((aqi - 200) / 100.0 * 1.0)
+            logger.info(f"AQI {aqi} (Very Unhealthy): score={score:.2f}")
+            return score
         else:
-            return max(0.0, 0.5 - ((aqi - 300) / 200.0 * 0.5))
+            score = max(0.0, 0.5 - ((aqi - 300) / 200.0 * 0.5))
+            logger.info(f"AQI {aqi} (Hazardous): score={score:.2f}")
+            return score
     
     # Fallback: Calculate from PM2.5 if AQI unavailable
     elif pm25 is not None and pm25 >= 0:

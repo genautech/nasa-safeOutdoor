@@ -23,15 +23,26 @@ export function SafetyScore({ score, showAnimation = false }: SafetyScoreProps) 
   }, [count, score, showAnimation])
 
   const getScoreColor = (score: number) => {
-    if (score >= 8) return "text-success"
-    if (score >= 6) return "text-warning"
-    return "text-destructive"
+    if (score >= 8.5) return "text-success" // Green for Excellent
+    if (score >= 7.0) return "text-emerald-600" // Green for Good
+    if (score >= 5.5) return "text-yellow-600" // Yellow for Fair
+    if (score >= 4.0) return "text-orange-600" // Orange for Caution
+    return "text-destructive" // Red for Poor
   }
 
   const getScoreLabel = (score: number) => {
-    if (score >= 8) return "Excellent"
-    if (score >= 6) return "Good"
-    return "Fair"
+    if (score >= 8.5) return "Excellent"
+    if (score >= 7.0) return "Good"
+    if (score >= 5.5) return "Fair"
+    if (score >= 4.0) return "Caution"
+    return "Poor"
+  }
+
+  const getScoreIcon = (score: number) => {
+    if (score >= 7.0) return { icon: CheckCircle2, color: "text-success" }
+    if (score >= 5.5) return { icon: CheckCircle2, color: "text-yellow-600" }
+    if (score >= 4.0) return { icon: CheckCircle2, color: "text-orange-600" }
+    return null // No icon for poor conditions
   }
 
   return (
@@ -48,14 +59,19 @@ export function SafetyScore({ score, showAnimation = false }: SafetyScoreProps) 
             <motion.span>{rounded}</motion.span>
             <span className="text-3xl text-muted-foreground">/10</span>
           </motion.div>
-          {showAnimation && (
+          {showAnimation && getScoreIcon(score) && (
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ delay: 4.5, duration: 0.3 }}
               className="absolute -right-8 -top-2"
             >
-              <CheckCircle2 className="w-8 h-8 text-success" />
+              {(() => {
+                const iconData = getScoreIcon(score);
+                if (!iconData) return null;
+                const Icon = iconData.icon;
+                return <Icon className={cn("w-8 h-8", iconData.color)} />;
+              })()}
             </motion.div>
           )}
         </div>
@@ -69,7 +85,7 @@ export function SafetyScore({ score, showAnimation = false }: SafetyScoreProps) 
         </motion.p>
       </div>
 
-      {showAnimation && (
+      {showAnimation && score >= 7.0 && (
         <>
           {[...Array(12)].map((_, i) => (
             <motion.div
@@ -84,7 +100,7 @@ export function SafetyScore({ score, showAnimation = false }: SafetyScoreProps) 
               transition={{ delay: 4.5, duration: 1 }}
               className="absolute top-1/2 left-1/2"
             >
-              <Sparkles className="w-4 h-4 text-success" />
+              <Sparkles className={cn("w-4 h-4", getScoreColor(score))} />
             </motion.div>
           ))}
         </>
