@@ -180,26 +180,28 @@ class TEMPOService:
             loop = asyncio.get_event_loop()
             
             def open_dataset():
-                # Use pydap with custom session for Bearer token authentication
-                from pydap.client import open_url
-                from pydap.cas.urs import setup_session
-                import requests
+                # Use earthaccess - NASA's official library for data access
+                import earthaccess
+                import os
                 
-                # Create authenticated session with Bearer token
-                session = requests.Session()
-                session.headers.update({
-                    'Authorization': f'Bearer {settings.nasa_earthdata_token}'
-                })
+                # Set Bearer token as environment variable for earthaccess
+                os.environ['EARTHDATA_TOKEN'] = settings.nasa_earthdata_token
                 
-                # Open OPeNDAP URL with authenticated session
-                # pydap handles the OPeNDAP protocol with the session
-                dataset = open_url(opendap_url, session=session)
+                # Authenticate with earthaccess using the token
+                # This sets up the authenticated session for OPeNDAP access
+                auth = earthaccess.login(strategy="environment")
                 
-                # Convert to xarray for easier manipulation
-                import xarray as xr
+                if not auth.authenticated:
+                    raise Exception("earthaccess authentication failed")
+                
+                # Open OPeNDAP dataset with authenticated session
+                # earthaccess handles all the authentication automatically
+                # Only fetches metadata initially, data is lazy-loaded
                 ds = xr.open_dataset(
-                    xr.backends.PydapDataStore(dataset),
-                    decode_times=False
+                    opendap_url,
+                    group='product',
+                    decode_times=False,
+                    engine='netcdf4'
                 )
                 
                 return ds
