@@ -109,33 +109,29 @@ class TEMPOService:
                 time_start = granule.get("time_start")
                 links = granule.get("links", [])
                 
-                # Find OPeNDAP URL in links
-                opendap_url = None
+                # Find direct data URL (not OPeNDAP - it returns 404)
+                # Use direct download link from asdc which works with authentication
+                data_url = None
                 for link in links:
                     href = link.get("href", "")
                     rel = link.get("rel", "")
                     
-                    # Look for OPeNDAP service link
-                    if "opendap" in href.lower() or "OPeNDAP" in rel:
-                        opendap_url = href
-                        break
-                    # Also check for .nc4.dmr or .nc4.dods suffixes
-                    if href.endswith(".nc4") or ".nc4?" in href:
-                        opendap_url = href
+                    # Look for direct data link from asdc
+                    if "data.asdc.earthdata.nasa.gov" in href and href.endswith(".nc"):
+                        data_url = href
                         break
                 
-                if not opendap_url:
-                    logger.warning(f"⚠️ No OPeNDAP URL found in granule links")
-                    logger.debug(f"Available links: {[l.get('href') for l in links]}")
+                if not data_url:
+                    logger.warning(f"⚠️ No data URL found in granule links")
                     return None
                 
                 logger.info(f"✅ Found TEMPO granule: {title}")
-                logger.debug(f"🔗 OPeNDAP URL: {opendap_url}")
+                logger.debug(f"🔗 Data URL: {data_url}")
                 
                 return {
                     "title": title,
                     "time_start": time_start,
-                    "opendap_url": opendap_url
+                    "opendap_url": data_url
                 }
                 
         except httpx.TimeoutException:
@@ -189,20 +185,26 @@ class TEMPOService:
             loop = asyncio.get_event_loop()
             
             def open_dataset():
-                # Create session with authentication
-                import pydap.client
-                from pydap.cas.urs import setup_session
+                # Download file with authentication
+                import tempfile
+                import httpx
                 
-                # Setup NASA EarthData authenticated session
-                session = setup_session(NASA_USER, NASA_PASSWORD, check_url=opendap_url)
-                
-                # Open dataset with authenticated session
-                return xr.open_dataset(
-                    opendap_url,
-                    group='product',  # TEMPO files have 'product' group
-                    engine='netcdf4',  # NetCDF4 handles OPeNDAP
-                    decode_times=False  # Skip time decoding for speed
-                )
+                # Create authenticated session
+                with httpx.Client(auth=(NASA_USER, NASA_PASSWORD), follow_redirects=True) as client:
+                    response = client.get(opendap_url)
+                    response.raise_for_status()
+                    
+                    # Save to temp file
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.nc') as tmp:
+                        tmp.write(response.content)
+                        tmp_path = tmp.name
+                    
+                    # Open with xarray
+                    return xr.open_dataset(
+                        tmp_path,
+                        group='product',
+                        decode_times=False
+                    )
             
             ds = await loop.run_in_executor(None, open_dataset)
             
