@@ -38,9 +38,6 @@ async def fetch_openaq_data(lat: float, lon: float, radius_km: int = 25) -> Opti
         "Accept": "application/json"
     }
     
-    # DEBUG: Show key being used
-    logger.debug(f"🔍 DEBUG: Using OpenAQ key = {settings.openaq_api_key[:20]}..." if settings.openaq_api_key else "❌ No key")
-    
     params = {
         "coordinates": f"{lat},{lon}",
         "radius": radius_km * 1000,  # Convert km to meters
