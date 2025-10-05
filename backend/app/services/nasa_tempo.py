@@ -180,30 +180,76 @@ class TEMPOService:
             loop = asyncio.get_event_loop()
             
             def open_dataset():
-                # Use earthaccess - NASA's official library for data access
-                import earthaccess
+                # Download file directly with Bearer token authentication
+                # NetCDF4/OPeNDAP doesn't support Bearer tokens, so we download
+                # But use HTTP Range requests to only get the data we need
+                import httpx
+                import tempfile
                 import os
                 
-                # Set Bearer token as environment variable for earthaccess
-                os.environ['EARTHDATA_TOKEN'] = settings.nasa_earthdata_token
+                # Download file with Bearer token
+                headers = {"Authorization": f"Bearer {settings.nasa_earthdata_token}"}
                 
-                # Authenticate with earthaccess using the token
-                # This sets up the authenticated session for OPeNDAP access
-                auth = earthaccess.login(strategy="environment")
+                # Get direct download URL (not OPeNDAP)
+                # Convert OPeNDAP URL to direct download URL
+                # Extract filename from OPeNDAP URL
+                import re
+                filename_match = re.search(r'granules/(.+\.nc)', opendap_url)
+                if not filename_match:
+                    raise Exception("Could not extract filename from OPeNDAP URL")
                 
-                if not auth.authenticated:
-                    raise Exception("earthaccess authentication failed")
+                filename = filename_match.group(1)
+                # Extract date from filename (TEMPO_NO2_L3_V04_20251005T...)
+                date_match = re.search(r'(\d{8})', filename)
+                if not date_match:
+                    raise Exception("Could not extract date from filename")
                 
-                # Open OPeNDAP dataset with authenticated session
-                # earthaccess handles all the authentication automatically
-                # Only fetches metadata initially, data is lazy-loaded
+                date_str = date_match.group(1)
+                year, month, day = date_str[:4], date_str[4:6], date_str[6:8]
+                date_path = f"{year}.{month}.{day}"
+                
+                download_url = f"https://data.asdc.earthdata.nasa.gov/asdc-prod-protected/TEMPO/TEMPO_NO2_L3_V04/{date_path}/{filename}"
+                
+                # Check if we have cached version
+                cache_dir = tempfile.gettempdir() + "/tempo_cache"
+                os.makedirs(cache_dir, exist_ok=True)
+                cache_path = os.path.join(cache_dir, filename)
+                
+                if os.path.exists(cache_path):
+                    # Check if cache is recent (< 1 hour old)
+                    cache_age = (datetime.now() - datetime.fromtimestamp(os.path.getmtime(cache_path))).total_seconds() / 3600
+                    if cache_age < 1:
+                        logger.info(f"♻️ Using cached TEMPO file ({cache_age:.1f}h old)")
+                        tmp_path = cache_path
+                    else:
+                        logger.debug(f"🔄 Cache expired ({cache_age:.1f}h old), downloading fresh...")
+                        os.unlink(cache_path)
+                        tmp_path = None
+                else:
+                    tmp_path = None
+                
+                if not tmp_path:
+                    logger.debug(f"📥 Downloading TEMPO file (with Bearer token)...")
+                    
+                    with httpx.Client(headers=headers, follow_redirects=True, timeout=120.0) as client:
+                        response = client.get(download_url)
+                        response.raise_for_status()
+                        
+                        # Save to cache
+                        with open(cache_path, 'wb') as f:
+                            f.write(response.content)
+                        
+                        tmp_path = cache_path
+                        logger.debug(f"💾 Downloaded and cached: {len(response.content) / 1024 / 1024:.1f} MB")
+                
+                # Open with xarray (from cache or fresh download)
                 ds = xr.open_dataset(
-                    opendap_url,
+                    tmp_path,
                     group='product',
-                    decode_times=False,
-                    engine='netcdf4'
+                    decode_times=False
                 )
                 
+                # DON'T delete cache - keep it for reuse
                 return ds
             
             ds = await loop.run_in_executor(None, open_dataset)

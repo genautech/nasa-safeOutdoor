@@ -7,10 +7,7 @@ supabase==2.9.0
 python-dotenv==1.0.0
 openai==1.50.0
 
-# NASA TEMPO data access (OPeNDAP)
-earthaccess==0.11.0
-pydap==3.5.0
-requests==2.32.3
+# NASA TEMPO data access (download + cache)
 xarray==2024.11.0
 netCDF4==1.7.2
 dask==2024.11.2
