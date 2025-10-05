@@ -9,14 +9,21 @@ Coverage: North America (15°N to 70°N, 170°W to 40°W)
 Resolution: ~10km spatial, hourly temporal
 Protocol: OPeNDAP (efficient remote data access)
 Data Transfer: ~1-5KB per request (vs 10MB full file download)
+
+Authentication: Requires NASA EarthData credentials
 """
 import httpx
 import logging
+import os
 from typing import Optional, Dict
 from datetime import datetime, timedelta
 import asyncio
 
 logger = logging.getLogger(__name__)
+
+# NASA EarthData credentials (from environment variables)
+NASA_USER = os.getenv("NASA_EARTHDATA_USER")
+NASA_PASSWORD = os.getenv("NASA_EARTHDATA_PASSWORD")
 
 
 class TEMPOService:
@@ -169,11 +176,27 @@ class TEMPOService:
             logger.info(f"📡 Accessing TEMPO via OPeNDAP")
             logger.debug(f"🔗 OPeNDAP URL: {opendap_url}")
             
-            # Open dataset remotely via OPeNDAP
+            # Check if NASA credentials are configured
+            if not NASA_USER or not NASA_PASSWORD:
+                logger.error(
+                    "❌ NASA EarthData credentials not configured! "
+                    "Set NASA_EARTHDATA_USER and NASA_EARTHDATA_PASSWORD environment variables."
+                )
+                return None
+            
+            # Open dataset remotely via OPeNDAP with authentication
             # This is a blocking I/O operation, so run in executor
             loop = asyncio.get_event_loop()
             
             def open_dataset():
+                # Create session with authentication
+                import pydap.client
+                from pydap.cas.urs import setup_session
+                
+                # Setup NASA EarthData authenticated session
+                session = setup_session(NASA_USER, NASA_PASSWORD, check_url=opendap_url)
+                
+                # Open dataset with authenticated session
                 return xr.open_dataset(
                     opendap_url,
                     group='product',  # TEMPO files have 'product' group
