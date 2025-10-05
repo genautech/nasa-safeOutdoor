@@ -346,40 +346,72 @@ async def analyze_adventure(request: Request, req: AnalyzeRequest):
             current_weather
         )
         
-        # Step 7: Calculate detailed safety breakdown
-        aqi_value = openaq_data.get("pm25", 50) if openaq_data else 50
-        elevation_m = elevation_data.get("elevation_m", 100)
-        
-        # Environmental score based on AQI (inverse relationship)
-        environmental_score = max(0, min(10, (100 - aqi_value) / 10))
-        
-        # Health score from risk calculation
-        health_score = risk_data["score"]
-        
-        # Terrain score based on elevation and activity
-        if elevation_m < 1000:
-            terrain_score = 9.0
-        elif elevation_m < 2000:
-            terrain_score = 7.5
-        elif elevation_m < 3000:
-            terrain_score = 6.0
-        else:
-            terrain_score = 4.5
-        
-        # Overall score (weighted average)
-        overall_score = (environmental_score * 0.3 + health_score * 0.5 + terrain_score * 0.2)
-        
-        overall_safety = OverallSafetyResponse(
-            environmental=round(environmental_score, 1),
-            health=round(health_score, 1),
-            terrain=round(terrain_score, 1),
-            overall=round(overall_score, 1)
-        )
-        
-        logger.info(
-            f"[{request_id}] Safety breakdown: env={overall_safety.environmental}, "
-            f"health={overall_safety.health}, terrain={overall_safety.terrain}"
-        )
+        # Step 7: Calculate detailed safety breakdown with null safety
+        try:
+            # Safe extraction with null checks
+            aqi_value = None
+            if openaq_data and openaq_data.get("pm25") is not None:
+                aqi_value = openaq_data.get("pm25")
+            else:
+                aqi_value = 50  # Default moderate
+            
+            elevation_m = None
+            if elevation_data and elevation_data.get("elevation_m") is not None:
+                elevation_m = elevation_data.get("elevation_m")
+            else:
+                elevation_m = 100  # Default lowland
+            
+            # Environmental score based on AQI (inverse relationship)
+            # Ensure aqi_value is not None before math
+            if aqi_value is not None:
+                environmental_score = max(0, min(10, (100 - aqi_value) / 10))
+            else:
+                environmental_score = 8.0
+            
+            # Health score from risk calculation
+            # Ensure risk_data["score"] exists and is not None
+            health_score = risk_data.get("score", 8.0)
+            if health_score is None:
+                health_score = 8.0
+            
+            # Terrain score based on elevation and activity
+            # Ensure elevation_m is not None
+            if elevation_m is not None:
+                if elevation_m < 1000:
+                    terrain_score = 9.0
+                elif elevation_m < 2000:
+                    terrain_score = 7.5
+                elif elevation_m < 3000:
+                    terrain_score = 6.0
+                else:
+                    terrain_score = 4.5
+            else:
+                terrain_score = 8.0
+            
+            # Overall score (weighted average)
+            overall_score = (environmental_score * 0.3 + health_score * 0.5 + terrain_score * 0.2)
+            
+            overall_safety = OverallSafetyResponse(
+                environmental=round(environmental_score, 1),
+                health=round(health_score, 1),
+                terrain=round(terrain_score, 1),
+                overall=round(overall_score, 1)
+            )
+            
+            logger.info(
+                f"[{request_id}] Safety breakdown: env={overall_safety.environmental}, "
+                f"health={overall_safety.health}, terrain={overall_safety.terrain}"
+            )
+            
+        except Exception as e:
+            logger.error(f"[{request_id}] Safety calculation failed: {e}, using fallback values")
+            # Fallback to safe default values
+            overall_safety = OverallSafetyResponse(
+                environmental=8.0,
+                health=8.0,
+                terrain=8.0,
+                overall=8.0
+            )
         
         # Step 8: Build complete response
         response = AnalyzeResponse(
