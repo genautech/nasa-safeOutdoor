@@ -1,6 +1,7 @@
 """OpenAQ air quality data service."""
 import httpx
 import logging
+import asyncio
 from typing import Optional
 from datetime import datetime
 from app.config import settings
@@ -10,8 +11,9 @@ logger = logging.getLogger(__name__)
 
 async def fetch_openaq_data(lat: float, lon: float, radius_km: int = 25) -> Optional[dict]:
     """
-    Fetch PM2.5 and NO2 from nearby OpenAQ stations.
-    API: https://docs.openaq.org/
+    Fetch PM2.5 and NO2 from OpenAQ v3 API.
+    
+    API v3 Docs: https://docs.openaq.org/using-the-api/v3
     
     Args:
         lat: Latitude
@@ -21,86 +23,114 @@ async def fetch_openaq_data(lat: float, lon: float, radius_km: int = 25) -> Opti
     Returns:
         dict with keys:
             - pm25: float (µg/m³, averaged from stations)
-            - no2: float (ppb)
-            - stations: int
-            - last_update: str
+            - no2: float (µg/m³, averaged from stations)
+            - stations: int (station count)
+            - last_update: str (ISO timestamp)
         Returns None on failure
     """
-    max_retries = 3
-    timeout = 10.0
-    base_url = "https://api.openaq.org/v2/latest"
+    base_url = "https://api.openaq.org/v3/locations"
     
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Fetching OpenAQ data for ({lat}, {lon}) - Attempt {attempt + 1}/{max_retries}")
-            
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                headers = {"X-API-Key": settings.openaq_api_key} if settings.openaq_api_key else {}
+    # v3 API requires API key in header
+    headers = {
+        "X-API-Key": settings.openaq_api_key,
+        "Accept": "application/json"
+    }
+    
+    params = {
+        "coordinates": f"{lat},{lon}",
+        "radius": radius_km * 1000,  # Convert km to meters
+        "limit": 20,
+        "sort": "distance"
+    }
+    
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for attempt in range(3):
+            try:
+                logger.info(f"Fetching OpenAQ v3 data for ({lat}, {lon}) - Attempt {attempt + 1}/3")
                 
-                response = await client.get(
-                    base_url,
-                    params={
-                        "coordinates": f"{lat},{lon}",
-                        "radius": radius_km * 1000,  # Convert to meters
-                        "limit": 100,
-                        "parameter": "pm25,no2"
-                    },
-                    headers=headers
-                )
+                response = await client.get(base_url, headers=headers, params=params)
                 response.raise_for_status()
                 data = response.json()
                 
+                # v3 has different structure: results[].latest{}
                 results = data.get("results", [])
+                
                 if not results:
                     logger.warning(f"No OpenAQ stations found within {radius_km}km")
                     return None
                 
-                # Aggregate measurements
                 pm25_values = []
                 no2_values = []
-                station_ids = set()
                 latest_timestamp = None
                 
-                for result in results:
-                    station_ids.add(result.get("location"))
+                for location in results:
+                    # Get latest measurements for this location
+                    latest = location.get("latest", {})
                     
-                    for measurement in result.get("measurements", []):
-                        param = measurement.get("parameter")
-                        value = measurement.get("value")
-                        timestamp = measurement.get("lastUpdated")
+                    # latest is a dict with parameter names as keys
+                    for param_name, param_data in latest.items():
+                        if not param_data or not isinstance(param_data, dict):
+                            continue
+                        
+                        value = param_data.get("value")
+                        timestamp = param_data.get("datetime")
                         
                         if value is not None:
-                            if param == "pm25":
-                                pm25_values.append(value)
-                            elif param == "no2":
-                                no2_values.append(value)
+                            if param_name == "pm25":
+                                pm25_values.append(float(value))
+                            elif param_name == "no2":
+                                no2_values.append(float(value))
                             
                             if timestamp and (not latest_timestamp or timestamp > latest_timestamp):
                                 latest_timestamp = timestamp
                 
+                # Calculate averages
+                pm25_avg = round(sum(pm25_values) / len(pm25_values), 2) if pm25_values else None
+                no2_avg = round(sum(no2_values) / len(no2_values), 2) if no2_values else None
+                
                 result = {
-                    "pm25": round(sum(pm25_values) / len(pm25_values), 2) if pm25_values else None,
-                    "no2": round(sum(no2_values) / len(no2_values), 2) if no2_values else None,
-                    "stations": len(station_ids),
+                    "pm25": pm25_avg,
+                    "no2": no2_avg,
+                    "stations": len(results),
                     "last_update": latest_timestamp or datetime.utcnow().isoformat()
                 }
                 
-                logger.info(f"OpenAQ: PM2.5={result['pm25']}, NO2={result['no2']}, stations={result['stations']}")
+                logger.info(
+                    f"OpenAQ v3: Found {len(results)} stations, "
+                    f"PM2.5={pm25_avg}, NO2={no2_avg}"
+                )
+                
                 return result
                 
-        except httpx.TimeoutException:
-            logger.warning(f"Timeout fetching OpenAQ data (attempt {attempt + 1})")
-            if attempt == max_retries - 1:
-                logger.error("All OpenAQ fetch attempts timed out")
-                return None
-        except httpx.HTTPError as e:
-            logger.warning(f"HTTP error fetching OpenAQ data: {e} (attempt {attempt + 1})")
-            if attempt == max_retries - 1:
-                logger.error(f"Failed to fetch OpenAQ data after {max_retries} attempts")
-                return None
-        except Exception as e:
-            logger.error(f"Unexpected error fetching OpenAQ data: {e}")
-            return None
+            except httpx.HTTPStatusError as e:
+                status = e.response.status_code
+                logger.warning(
+                    f"OpenAQ v3 HTTP {status} error: {e} (attempt {attempt + 1}/3)"
+                )
+                
+                if status == 401:
+                    logger.error("OpenAQ API key is invalid or missing")
+                    return None
+                elif status == 410:
+                    logger.error("OpenAQ v2 API is deprecated, migrated to v3")
+                    return None
+                
+                if attempt == 2:
+                    return None
+                    
+                await asyncio.sleep(1)
+                
+            except httpx.TimeoutException:
+                logger.warning(f"Timeout fetching OpenAQ v3 data (attempt {attempt + 1}/3)")
+                if attempt == 2:
+                    return None
+                await asyncio.sleep(1)
+                
+            except Exception as e:
+                logger.error(f"OpenAQ v3 error: {e} (attempt {attempt + 1}/3)")
+                if attempt == 2:
+                    return None
+                await asyncio.sleep(1)
     
     return None
 
@@ -108,7 +138,7 @@ async def fetch_openaq_data(lat: float, lon: float, radius_km: int = 25) -> Opti
 class OpenAQService:
     """Service for fetching air quality data from OpenAQ."""
     
-    BASE_URL = "https://api.openaq.org/v2"
+    BASE_URL = "https://api.openaq.org/v3"
     
     def __init__(self):
         self.api_key = settings.openaq_api_key
@@ -144,7 +174,7 @@ class OpenAQService:
             "pm25": data.get("pm25", 15.0),
             "pm10": data.get("pm25", 15.0) * 2 if data.get("pm25") else 30.0,  # Estimate
             "no2": data.get("no2", 20.0),
-            "o3": 45.0,  # OpenAQ v2 may not always have O3
+            "o3": 45.0,  # OpenAQ v3 may not always have O3
             "co": 0.4,
             "so2": 2.0,
             "aqi": aqi,

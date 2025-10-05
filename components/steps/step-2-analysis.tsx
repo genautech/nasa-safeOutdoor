@@ -29,8 +29,15 @@ export function Step2Analysis({ onNext, onBack, adventureContext, onAnalysisComp
 
   // Convert backend response to SafetyAnalysis type
   const convertToSafetyAnalysis = (data: AnalyzeResponse): SafetyAnalysis => {
+    console.log('🔍 Converting backend data to SafetyAnalysis:', data)
+    console.log('🧠 AI Summary from backend:', data.ai_summary)
+    console.log('📊 AI Summary length:', data.ai_summary?.length || 0)
+    
     return {
       score: Math.round(data.risk_score * 10), // Convert 0-10 to 0-100 scale
+      category: data.category,
+      ai_summary: data.ai_summary, // ✅ PRESERVE AI SUMMARY
+      overallSafety: data.overallSafety,
       weather: {
         condition: data.weather_forecast[0]?.temp_c ? `${Math.round(data.weather_forecast[0].temp_c)}°C` : "Clear",
         temp: data.weather_forecast[0]?.temp_c || 20,

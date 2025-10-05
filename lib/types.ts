@@ -71,35 +71,39 @@ export interface RouteSegmentData {
 
 export interface SafetyAnalysis {
   score: number
-  overallSafety: {
+  category?: string
+  ai_summary?: string // OpenAI-generated summary
+  overallSafety?: {
     environmental: number
     health: number
     terrain: number
+    overall: number
   }
-  aqi: number
-  pm25: number
-  no2: number
-  weather: {
+  aqi?: number
+  pm25?: number
+  no2?: number
+  weather?: {
     condition: string
     temp: number
-    uvIndex: string
+    uvIndex?: string
     humidity: number
     windSpeed: number
   }
-  trailConditions: string
-  recommendedTime: {
+  trailConditions?: string
+  recommendedTime?: {
     date: string
     startTime: string
     endTime: string
+    reason?: string
   }
-  emergencyFeaturesActive: boolean
-  healthData: HealthData
-  satelliteData: SatelliteData
-  environmentalMetrics: EnvironmentalMetrics
+  emergencyFeaturesActive?: boolean
+  healthData?: HealthData
+  satelliteData?: SatelliteData
+  environmentalMetrics?: EnvironmentalMetrics
   routeSegments?: RouteSegmentData[]
-  emergencyInfo: {
-    nearestHospital: string
-    distance: number
+  emergencyInfo?: {
+    nearestHospital?: string
+    distance: string
     emergencyContact: string
     cellCoverage: string
   }
