@@ -6,3 +6,9 @@ pydantic-settings==2.5.0
 supabase==2.9.0
 python-dotenv==1.0.0
 openai==1.50.0
+
+# NASA TEMPO OPeNDAP access
+xarray==2024.11.0
+netCDF4==1.7.2
+dask==2024.11.2
+numpy==2.1.3
