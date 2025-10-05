@@ -169,10 +169,10 @@ class TEMPOService:
             logger.debug(f"🔗 OPeNDAP URL: {opendap_url}")
             
             # Check if NASA token is configured
-            if not settings.nasa_earthdata_password:
+            if not settings.nasa_earthdata_token:
                 logger.error(
                     "❌ NASA EarthData token not configured! "
-                    "Set NASA_EARTHDATA_PASSWORD with your Bearer token from https://urs.earthdata.nasa.gov/profile"
+                    "Set NASA_EARTHDATA_TOKEN with your Bearer token from https://urs.earthdata.nasa.gov/profile"
                 )
                 return None
             
@@ -187,7 +187,7 @@ class TEMPOService:
                 
                 # Use Bearer token authentication
                 headers = {
-                    "Authorization": f"Bearer {settings.nasa_earthdata_password}"
+                    "Authorization": f"Bearer {settings.nasa_earthdata_token}"
                 }
                 
                 with httpx.Client(headers=headers, follow_redirects=True) as client:

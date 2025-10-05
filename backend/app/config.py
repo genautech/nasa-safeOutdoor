@@ -21,9 +21,8 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_key: str
     
-    # NASA Earthdata (OPeNDAP authentication) - Optional
-    nasa_earthdata_user: Optional[str] = None
-    nasa_earthdata_password: Optional[str] = None
+    # NASA Earthdata Bearer Token - Optional
+    nasa_earthdata_token: Optional[str] = None
     
     # OpenAQ
     openaq_api_key: str
