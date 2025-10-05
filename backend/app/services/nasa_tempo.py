@@ -54,13 +54,14 @@ class TEMPOService:
         Find most recent TEMPO granule covering the specified location.
         
         Queries NASA CMR API for TEMPO L3 granules intersecting the point.
+        Returns granule with OPeNDAP URL from CMR links.
         
         Args:
             lat: Latitude
             lon: Longitude
         
         Returns:
-            dict with granule metadata or None if not found
+            dict with granule metadata including opendap_url, or None if not found
         """
         # Create small bounding box around point (~50km buffer for ~10km resolution)
         buffer = 0.5  # degrees
@@ -96,16 +97,38 @@ class TEMPOService:
                 # Get most recent granule
                 granule = entries[0]
                 
-                # Extract filename from title or links
+                # Extract metadata
                 title = granule.get("title", "")
                 time_start = granule.get("time_start")
+                links = granule.get("links", [])
+                
+                # Find OPeNDAP URL in links
+                opendap_url = None
+                for link in links:
+                    href = link.get("href", "")
+                    rel = link.get("rel", "")
+                    
+                    # Look for OPeNDAP service link
+                    if "opendap" in href.lower() or "OPeNDAP" in rel:
+                        opendap_url = href
+                        break
+                    # Also check for .nc4.dmr or .nc4.dods suffixes
+                    if href.endswith(".nc4") or ".nc4?" in href:
+                        opendap_url = href
+                        break
+                
+                if not opendap_url:
+                    logger.warning(f"⚠️ No OPeNDAP URL found in granule links")
+                    logger.debug(f"Available links: {[l.get('href') for l in links]}")
+                    return None
                 
                 logger.info(f"✅ Found TEMPO granule: {title}")
+                logger.debug(f"🔗 OPeNDAP URL: {opendap_url}")
                 
                 return {
                     "title": title,
                     "time_start": time_start,
-                    "producer_granule_id": granule.get("producer_granule_id", title)
+                    "opendap_url": opendap_url
                 }
                 
         except httpx.TimeoutException:
@@ -119,7 +142,7 @@ class TEMPOService:
             return None
     
     @staticmethod
-    async def extract_no2_opendap(granule_title: str, lat: float, lon: float) -> Optional[float]:
+    async def extract_no2_opendap(opendap_url: str, lat: float, lon: float) -> Optional[float]:
         """
         Extract NO2 value from TEMPO granule using OPeNDAP protocol.
         
@@ -131,7 +154,7 @@ class TEMPOService:
         5. Convert to ppb for AQI compatibility
         
         Args:
-            granule_title: TEMPO granule filename
+            opendap_url: Full OPeNDAP URL from CMR
             lat: Target latitude
             lon: Target longitude
         
@@ -143,11 +166,7 @@ class TEMPOService:
             import xarray as xr
             import numpy as np
             
-            # Build OPeNDAP URL
-            # Format: https://opendap.earthdata.nasa.gov/.../granules/{filename}
-            opendap_url = f"{TEMPOService.OPENDAP_BASE}/{granule_title}"
-            
-            logger.info(f"📡 Accessing TEMPO via OPeNDAP: {granule_title}")
+            logger.info(f"📡 Accessing TEMPO via OPeNDAP")
             logger.debug(f"🔗 OPeNDAP URL: {opendap_url}")
             
             # Open dataset remotely via OPeNDAP
@@ -302,7 +321,7 @@ async def fetch_tempo_no2(lat: float, lon: float) -> Optional[Dict]:
     
     # Extract NO2 value via OPeNDAP
     no2_ppb = await TEMPOService.extract_no2_opendap(
-        granule['title'],
+        granule['opendap_url'],
         lat,
         lon
     )
