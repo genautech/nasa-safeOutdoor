@@ -12,6 +12,7 @@ from app.services.weather import fetch_weather_forecast
 from app.services.elevation import fetch_elevation
 from app.logic.risk_score import calculate_safety_score
 from app.logic.checklist import generate_checklist
+from app.logic.aqi import calculate_aqi_from_pollutants, get_aqi_category as get_aqi_category_new
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["analysis"])
@@ -85,64 +86,7 @@ class AnalyzeResponse(BaseModel):
     generated_at: str
 
 
-def calculate_aqi_from_pollutants(pm25: Optional[float], no2: Optional[float]) -> tuple[int, str]:
-    """
-    Calculate AQI from PM2.5 and NO2, return AQI and dominant pollutant.
-    
-    Uses EPA AQI calculation formula.
-    """
-    if pm25 is None and no2 is None:
-        return 50, "unknown"
-    
-    # Calculate AQI for PM2.5 (using EPA breakpoints)
-    aqi_pm25 = 0
-    if pm25 is not None:
-        if pm25 <= 12.0:
-            aqi_pm25 = int((50 / 12.0) * pm25)
-        elif pm25 <= 35.4:
-            aqi_pm25 = int(50 + ((100 - 50) / (35.4 - 12.1)) * (pm25 - 12.1))
-        elif pm25 <= 55.4:
-            aqi_pm25 = int(100 + ((150 - 100) / (55.4 - 35.5)) * (pm25 - 35.5))
-        elif pm25 <= 150.4:
-            aqi_pm25 = int(150 + ((200 - 150) / (150.4 - 55.5)) * (pm25 - 55.5))
-        elif pm25 <= 250.4:
-            aqi_pm25 = int(200 + ((300 - 200) / (250.4 - 150.5)) * (pm25 - 150.5))
-        else:
-            aqi_pm25 = int(300 + ((500 - 300) / (500.4 - 250.5)) * (pm25 - 250.5))
-    
-    # Calculate AQI for NO2 (simplified - actual EPA uses ppb breakpoints)
-    aqi_no2 = 0
-    if no2 is not None:
-        if no2 <= 53:
-            aqi_no2 = int((50 / 53) * no2)
-        elif no2 <= 100:
-            aqi_no2 = int(50 + ((100 - 50) / (100 - 54)) * (no2 - 54))
-        elif no2 <= 360:
-            aqi_no2 = int(100 + ((150 - 100) / (360 - 101)) * (no2 - 101))
-        else:
-            aqi_no2 = int(150 + ((200 - 150) / (649 - 361)) * (no2 - 361))
-    
-    # Return max AQI and dominant pollutant
-    if aqi_pm25 >= aqi_no2:
-        return max(aqi_pm25, 0), "pm25"
-    else:
-        return max(aqi_no2, 0), "no2"
-
-
-def get_aqi_category(aqi: int) -> str:
-    """Get AQI category from value."""
-    if aqi <= 50:
-        return "Good"
-    elif aqi <= 100:
-        return "Moderate"
-    elif aqi <= 150:
-        return "Unhealthy for Sensitive Groups"
-    elif aqi <= 200:
-        return "Unhealthy"
-    elif aqi <= 300:
-        return "Very Unhealthy"
-    else:
-        return "Hazardous"
+# Removed - now using app.logic.aqi module
 
 
 async def generate_ai_summary(
@@ -202,6 +146,35 @@ Required Gear Items: {sum(1 for item in checklist if item['required'])}
     except Exception as e:
         logger.warning(f"AI summary generation failed: {e}, using fallback")
         return generate_fallback_summary(risk_data, air_quality, weather)
+
+
+def _build_data_sources_list(tempo_data: Optional[dict], openaq_data: Optional[dict], no2_source: Optional[str]) -> List[str]:
+    """
+    Build list of data sources used for this analysis.
+    
+    Clearly indicates which sources provided actual data vs fallbacks.
+    """
+    sources = []
+    
+    # NO2 source (TEMPO or OpenAQ)
+    if tempo_data and tempo_data.get("no2_ppb"):
+        sources.append("NASA TEMPO (satellite NO2)")
+    elif no2_source == "OpenAQ (ground stations)":
+        sources.append("OpenAQ (ground NO2)")
+    
+    # PM2.5 source (always OpenAQ)
+    if openaq_data and openaq_data.get("pm25"):
+        if "OpenAQ" not in " ".join(sources):
+            sources.append("OpenAQ (ground PM2.5)")
+    
+    # If no specific OpenAQ mentioned yet
+    if openaq_data and openaq_data.get("stations", 0) > 0 and "OpenAQ" not in " ".join(sources):
+        sources.append("OpenAQ")
+    
+    # Weather and elevation (always used)
+    sources.extend(["Open-Meteo (weather)", "Open-Elevation (terrain)"])
+    
+    return sources
 
 
 def generate_fallback_summary(risk_data: dict, air_quality: dict, weather: dict) -> str:
@@ -291,14 +264,31 @@ async def analyze_adventure(request: Request, req: AnalyzeRequest):
             logger.warning(f"[{request_id}] Elevation data unavailable, using fallback")
             elevation_data = {"elevation_m": 100.0, "terrain_type": "lowland"}
         
-        # Step 3: Calculate AQI from pollutants
-        aqi, dominant_pollutant = calculate_aqi_from_pollutants(
-            openaq_data.get("pm25"),
-            tempo_data.get("no2_ppb")
-        )
-        aqi_category = get_aqi_category(aqi)
+        # Step 3: Merge TEMPO and OpenAQ data intelligently
+        # Priority: TEMPO for NO2 (satellite), OpenAQ for PM2.5 (ground stations)
+        no2_ppb = None
+        no2_source = None
         
-        logger.info(f"[{request_id}] Calculated AQI: {aqi} ({aqi_category})")
+        if tempo_data and tempo_data.get("no2_ppb"):
+            no2_ppb = tempo_data["no2_ppb"]
+            no2_source = "NASA TEMPO (satellite)"
+            logger.info(f"[{request_id}] Using TEMPO NO2: {no2_ppb:.2f} ppb")
+        elif openaq_data and openaq_data.get("no2"):
+            no2_ppb = openaq_data["no2"]
+            no2_source = "OpenAQ (ground stations)"
+            logger.info(f"[{request_id}] Using OpenAQ NO2: {no2_ppb:.2f} ppb")
+        else:
+            logger.warning(f"[{request_id}] No NO2 data available from TEMPO or OpenAQ")
+        
+        pm25 = openaq_data.get("pm25") if openaq_data else None
+        if pm25:
+            logger.info(f"[{request_id}] Using OpenAQ PM2.5: {pm25:.2f} μg/m³")
+        
+        # Calculate AQI from available pollutants
+        aqi, dominant_pollutant = calculate_aqi_from_pollutants(pm25, no2_ppb)
+        aqi_category = get_aqi_category_new(aqi)
+        
+        logger.info(f"[{request_id}] Calculated AQI: {aqi} ({aqi_category}), dominant: {dominant_pollutant}")
         
         # Step 4: Calculate risk score
         current_weather = weather_data[0]
@@ -422,8 +412,8 @@ async def analyze_adventure(request: Request, req: AnalyzeRequest):
             air_quality=AirQualityResponse(
                 aqi=aqi,
                 category=aqi_category,
-                pm25=openaq_data.get("pm25", 15.0),
-                no2=tempo_data.get("no2_ppb", 20.0),
+                pm25=pm25 if pm25 is not None else 15.0,
+                no2=no2_ppb if no2_ppb is not None else 20.0,
                 dominant_pollutant=dominant_pollutant
             ),
             weather_forecast=[
@@ -436,12 +426,7 @@ async def analyze_adventure(request: Request, req: AnalyzeRequest):
             warnings=risk_data["warnings"],
             ai_summary=ai_summary,
             risk_factors=risk_data["risk_factors"],
-            data_sources=[
-                "NASA TEMPO" if tempo_data.get("no2_ppb") else "NASA TEMPO (fallback)",
-                "OpenAQ" if openaq_data.get("stations", 0) > 0 else "OpenAQ (fallback)",
-                "Open-Meteo",
-                "Open-Elevation"
-            ],
+            data_sources=_build_data_sources_list(tempo_data, openaq_data, no2_source),
             generated_at=datetime.utcnow().isoformat()
         )
         
