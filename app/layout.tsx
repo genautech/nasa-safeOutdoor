@@ -8,9 +8,10 @@ import { Suspense } from "react"
 import { BackendStatus } from "@/components/backend-status"
 
 export const metadata: Metadata = {
-  title: "SafeOutdoor - AI-Powered Outdoor Safety Advisor",
+  title: "Safe Outdoor v3.0 – NASA Space Apps 2025",
   description:
-    "Plan your outdoor adventures with AI-powered safety analysis using NASA TEMPO satellite data, air quality monitoring, and weather forecasts.",
+    "NASA-powered outdoor safety insights blending TEMPO, OMI, MERRA-2, and GPM data with wearable and calendar intelligence.",
+  manifest: "/manifest.json",
   generator: "v0.app",
 }
 
