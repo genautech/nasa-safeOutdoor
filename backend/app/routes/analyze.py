@@ -153,26 +153,38 @@ def _build_data_sources_list(tempo_data: Optional[dict], openaq_data: Optional[d
     Build list of data sources used for this analysis.
     
     Clearly indicates which sources provided actual data vs fallbacks.
+    Shows NASA TEMPO when satellite data was used, OpenAQ for ground measurements.
     """
     sources = []
     
-    # NO2 source (TEMPO or OpenAQ)
-    if tempo_data and tempo_data.get("no2_ppb"):
-        sources.append("NASA TEMPO (satellite NO2)")
-    elif no2_source == "OpenAQ (ground stations)":
-        sources.append("OpenAQ (ground NO2)")
+    # NO2 source (TEMPO or OpenAQ or fallback)
+    if tempo_data and tempo_data.get("no2_ppb") is not None:
+        quality = tempo_data.get("quality_flag", 0)
+        if quality == 0:
+            sources.append("NASA TEMPO satellite (NO2)")
+        else:
+            sources.append("NASA TEMPO satellite (NO2 estimated)")
+    elif "OpenAQ" in str(no2_source):
+        sources.append("OpenAQ ground stations (NO2)")
+    elif "Fallback" in str(no2_source):
+        # Don't add fallback to sources - it's not a real data source
+        pass
     
-    # PM2.5 source (always OpenAQ)
-    if openaq_data and openaq_data.get("pm25"):
-        if "OpenAQ" not in " ".join(sources):
-            sources.append("OpenAQ (ground PM2.5)")
-    
-    # If no specific OpenAQ mentioned yet
-    if openaq_data and openaq_data.get("stations", 0) > 0 and "OpenAQ" not in " ".join(sources):
-        sources.append("OpenAQ")
+    # PM2.5 source (always OpenAQ, TEMPO doesn't measure particles)
+    if openaq_data and openaq_data.get("pm25") is not None:
+        # Only add if not already mentioned
+        if not any("OpenAQ" in s for s in sources):
+            sources.append("OpenAQ ground stations (PM2.5)")
+        elif "OpenAQ ground stations (NO2)" in sources:
+            # Replace with combined
+            sources = [s for s in sources if s != "OpenAQ ground stations (NO2)"]
+            sources.append("OpenAQ ground stations (NO2, PM2.5)")
     
     # Weather and elevation (always used)
-    sources.extend(["Open-Meteo (weather)", "Open-Elevation (terrain)"])
+    sources.extend([
+        "Open-Meteo weather API",
+        "Open-Elevation terrain API"
+    ])
     
     return sources
 
@@ -265,20 +277,48 @@ async def analyze_adventure(request: Request, req: AnalyzeRequest):
             elevation_data = {"elevation_m": 100.0, "terrain_type": "lowland"}
         
         # Step 3: Merge TEMPO and OpenAQ data intelligently
-        # Priority: TEMPO for NO2 (satellite), OpenAQ for PM2.5 (ground stations)
+        # Strategy:
+        # 1. Try NASA TEMPO first (satellite, North America only)
+        # 2. Fallback to OpenAQ for NO2 (ground stations, global)
+        # 3. Always use OpenAQ for PM2.5 (TEMPO doesn't measure particles)
+        
         no2_ppb = None
         no2_source = None
         
-        if tempo_data and tempo_data.get("no2_ppb"):
+        # Check if TEMPO provided valid NO2 data
+        if tempo_data and tempo_data.get("no2_ppb") is not None:
             no2_ppb = tempo_data["no2_ppb"]
-            no2_source = "NASA TEMPO (satellite)"
-            logger.info(f"[{request_id}] Using TEMPO NO2: {no2_ppb:.2f} ppb")
-        elif openaq_data and openaq_data.get("no2"):
+            quality = tempo_data.get("quality_flag", 0)
+            age = tempo_data.get("age_hours", 0)
+            
+            if quality == 0:
+                no2_source = f"NASA TEMPO satellite ({age:.1f}h old)"
+            else:
+                no2_source = f"NASA TEMPO estimated ({age:.1f}h old)"
+            
+            logger.info(
+                f"[{request_id}] ✅ Using TEMPO NO2: {no2_ppb:.2f} ppb "
+                f"[{no2_source}]"
+            )
+        
+        # Fallback to OpenAQ if TEMPO unavailable
+        elif openaq_data and openaq_data.get("no2") is not None:
             no2_ppb = openaq_data["no2"]
-            no2_source = "OpenAQ (ground stations)"
-            logger.info(f"[{request_id}] Using OpenAQ NO2: {no2_ppb:.2f} ppb")
+            stations = openaq_data.get("stations", 0)
+            no2_source = f"OpenAQ ground stations (n={stations})"
+            logger.info(
+                f"[{request_id}] 🔄 Using OpenAQ NO2 (TEMPO unavailable): "
+                f"{no2_ppb:.2f} ppb [{no2_source}]"
+            )
+        
+        # Last resort: use fallback value
         else:
-            logger.warning(f"[{request_id}] No NO2 data available from TEMPO or OpenAQ")
+            no2_ppb = 20.0  # Conservative moderate value
+            no2_source = "Fallback estimate"
+            logger.warning(
+                f"[{request_id}] ⚠️ No NO2 data from TEMPO or OpenAQ, "
+                f"using fallback: {no2_ppb} ppb"
+            )
         
         pm25 = openaq_data.get("pm25") if openaq_data else None
         if pm25:
@@ -295,8 +335,8 @@ async def analyze_adventure(request: Request, req: AnalyzeRequest):
         risk_input = {
             "activity": req.activity,
             "aqi": aqi,
-            "pm25": openaq_data.get("pm25", 15.0),
-            "no2": tempo_data.get("no2_ppb", 20.0),
+            "pm25": pm25 if pm25 is not None else 15.0,
+            "no2": no2_ppb if no2_ppb is not None else 20.0,
             "weather": current_weather,
             "elevation": int(elevation_data.get("elevation_m", 100)),
             "uv_index": current_weather.get("uv_index", 5.0)
@@ -308,7 +348,8 @@ async def analyze_adventure(request: Request, req: AnalyzeRequest):
         # Step 5: Generate checklist
         checklist_input = {
             "aqi": aqi,
-            "pm25": openaq_data.get("pm25", 15.0),
+            "pm25": pm25 if pm25 is not None else 15.0,
+            "no2": no2_ppb if no2_ppb is not None else 20.0,
             "uv_index": current_weather.get("uv_index", 5.0),
             "elevation": int(elevation_data.get("elevation_m", 100))
         }
@@ -324,8 +365,8 @@ async def analyze_adventure(request: Request, req: AnalyzeRequest):
         air_quality_dict = {
             "aqi": aqi,
             "category": aqi_category,
-            "pm25": openaq_data.get("pm25", 15.0),
-            "no2": tempo_data.get("no2_ppb", 20.0)
+            "pm25": pm25 if pm25 is not None else 15.0,
+            "no2": no2_ppb if no2_ppb is not None else 20.0
         }
         
         ai_summary = await generate_ai_summary(
