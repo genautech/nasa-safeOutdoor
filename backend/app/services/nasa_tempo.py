@@ -168,6 +168,10 @@ class TEMPOService:
             logger.info(f"📡 Accessing TEMPO via OPeNDAP")
             logger.debug(f"🔗 OPeNDAP URL: {opendap_url}")
             
+            # DEBUG: Show credentials
+            logger.debug(f"🔍 DEBUG: NASA user = '{settings.nasa_earthdata_user}' (type: {type(settings.nasa_earthdata_user).__name__})")
+            logger.debug(f"🔍 DEBUG: NASA pass = '{settings.nasa_earthdata_password[:10] if settings.nasa_earthdata_password else None}...' (type: {type(settings.nasa_earthdata_password).__name__})")
+            
             # Check if NASA credentials are configured
             if not settings.nasa_earthdata_user or not settings.nasa_earthdata_password:
                 logger.error(
