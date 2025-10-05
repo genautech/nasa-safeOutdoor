@@ -21,8 +21,10 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_key: str
     
-    # NASA Earthdata Bearer Token - Optional
-    nasa_earthdata_token: Optional[str] = None
+    # Google Earth Engine (para TEMPO & Sentinel-5P)
+    google_cloud_project_id: Optional[str] = None
+    google_service_account_email: Optional[str] = None
+    google_service_account_key: Optional[str] = None
     
     # OpenAQ
     openaq_api_key: str

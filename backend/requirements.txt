@@ -7,10 +7,5 @@ supabase==2.9.0
 python-dotenv==1.0.0
 openai==1.50.0
 
-# NASA TEMPO data access (streaming via earthaccess)
-earthaccess==0.11.0
-xarray==2024.11.0
-netCDF4==1.7.2
-dask==2024.11.2
-numpy==2.1.3
-h5py==3.12.1
+# NASA TEMPO & Air Quality data via Google Earth Engine (cirúrgico!)
+earthengine-api==0.1.384

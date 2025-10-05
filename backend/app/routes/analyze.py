@@ -6,7 +6,7 @@ from datetime import datetime
 import asyncio
 import logging
 
-from app.services.nasa_tempo import fetch_tempo_no2
+from app.services.earth_engine_service import fetch_earth_engine_no2
 from app.services.openaq import fetch_openaq_data
 from app.services.weather import fetch_weather_forecast
 from app.services.elevation import fetch_elevation
@@ -234,7 +234,7 @@ async def analyze_adventure(request: Request, req: AnalyzeRequest):
         # Step 1: Fetch all data in parallel for optimal performance
         logger.info(f"[{request_id}] Fetching data from all sources...")
         
-        tempo_task = fetch_tempo_no2(req.lat, req.lon)
+        tempo_task = fetch_earth_engine_no2(req.lat, req.lon)
         openaq_task = fetch_openaq_data(req.lat, req.lon, radius_km=25)
         weather_task = fetch_weather_forecast(req.lat, req.lon, hours=req.duration_hours)
         elevation_task = fetch_elevation(req.lat, req.lon)
