@@ -86,57 +86,91 @@ class EarthEngineService:
         if not EarthEngineService.is_tempo_coverage(lat, lon):
             logger.info(f"📍 Location ({lat:.4f}, {lon:.4f}) outside TEMPO coverage")
             return None
-        
+
         try:
-            if date is None:
-                date = datetime.utcnow().strftime('%Y-%m-%d')
-            
-            # Earth Engine precisa de range (início e fim diferentes)
-            date_obj = datetime.strptime(date, '%Y-%m-%d')
-            end_date = (date_obj + timedelta(days=1)).strftime('%Y-%m-%d')
-            
+            # Tentar múltiplas datas se nenhuma for especificada
+            # Usar datas recentes de 2025 (dados atuais!)
+            dates_to_try = [
+                '2025-09-25',  # Setembro 2025 (dados mais recentes)
+                '2025-09-20',
+                '2025-09-15',
+                '2025-09-10',
+                '2025-08-25',  # Agosto 2025
+                '2025-08-20',
+                '2025-08-15',
+                '2025-08-10',
+                '2025-07-25',  # Julho 2025
+                '2025-07-20',
+                '2025-07-15'
+            ] if date is None else [date]
+
+            # Aumentar raio de busca para 25km (mais pixels válidos)
+            search_radius_km = 25.0
+
             # Criar geometria (ponto + buffer)
             point = ee.Geometry.Point([lon, lat])
-            area = point.buffer(radius_km * 1000)  # km → metros
-            
-            # Dataset TEMPO NO2 (filtrado por qualidade)
-            tempo = ee.ImageCollection('NASA/TEMPO/NO2_L3_QA')
-            
-            # Filtrar por data e região (range de date até end_date)
-            images = tempo.filterDate(date, end_date).filterBounds(area)
-            
-            # Verificar se há dados
-            count = images.size().getInfo()
-            if count == 0:
-                logger.info(f"⚠️ No TEMPO data for {date} at ({lat:.4f}, {lon:.4f})")
-                return None
-            
-            logger.info(f"✅ Found {count} TEMPO images for {date}")
-            
-            # Pegar primeira imagem (mais recente do dia)
-            image = images.first()
-            no2_band = image.select('vertical_column_troposphere')
-            
-            # Extrair estatísticas da região
-            stats = no2_band.reduceRegion(
-                reducer=ee.Reducer.mean()
-                    .combine(ee.Reducer.stdDev(), '', True)
-                    .combine(ee.Reducer.min(), '', True)
-                    .combine(ee.Reducer.max(), '', True),
-                geometry=area,
-                scale=1000,  # 1km resolution
-                maxPixels=1e9
-            ).getInfo()
-            
-            mean_value = stats.get('vertical_column_troposphere_mean')
-            
+            area = point.buffer(search_radius_km * 1000)  # km → metros
+
+            logger.info(f"🔍 Searching TEMPO with {search_radius_km}km radius, trying {len(dates_to_try)} dates")
+
+            # Tentar cada data até encontrar dados válidos
+            for test_date in dates_to_try:
+                # Earth Engine precisa de range (início e fim diferentes)
+                date_obj = datetime.strptime(test_date, '%Y-%m-%d')
+                end_date = (date_obj + timedelta(days=1)).strftime('%Y-%m-%d')
+
+                # Dataset TEMPO NO2 (filtrado por qualidade)
+                tempo = ee.ImageCollection('NASA/TEMPO/NO2_L3_QA')
+
+                # Filtrar por data e região (range de date até end_date)
+                images = tempo.filterDate(test_date, end_date).filterBounds(area)
+
+                # Verificar se há dados
+                count = images.size().getInfo()
+                if count == 0:
+                    logger.info(f"⚠️ No TEMPO images for {test_date}, trying next date...")
+                    continue
+
+                logger.info(f"✅ Found {count} TEMPO images for {test_date}")
+
+                # Pegar primeira imagem (mais recente do dia)
+                image = images.first()
+                no2_band = image.select('vertical_column_troposphere')
+
+                # Extrair estatísticas da região
+                stats = no2_band.reduceRegion(
+                    reducer=ee.Reducer.mean()
+                        .combine(ee.Reducer.stdDev(), '', True)
+                        .combine(ee.Reducer.min(), '', True)
+                        .combine(ee.Reducer.max(), '', True),
+                    geometry=area,
+                    scale=1000,  # 1km resolution
+                    maxPixels=1e9
+                ).getInfo()
+
+                mean_value = stats.get('vertical_column_troposphere_mean')
+
+                if mean_value is None:
+                    logger.warning(f"⚠️ No valid NO2 values for {test_date}, trying next date...")
+                    continue
+
+                # Sucesso! Encontrou dados válidos
+                logger.info(f"✅ Valid data found for {test_date}")
+                date = test_date  # Usar a data que funcionou
+                break
+
+            # Se não encontrou dados em nenhuma data
             if mean_value is None:
-                logger.warning(f"⚠️ No valid TEMPO NO2 values in region")
+                logger.warning(f"⚠️ No valid TEMPO NO2 values in region after trying {len(dates_to_try)} dates")
                 return None
             
             # Converter molec/cm² para ppb (aproximado)
-            # Fator de conversão aproximado para troposfera (~3km)
-            no2_ppb = mean_value * 1e-15 * 2.69e10
+            # Fator de conversão: assumindo altura troposférica ~3km = 300000 cm
+            # Densidade ar ao nível do mar: ~2.5e19 molec/cm³
+            # ppb = (molec/cm² / altura_cm) / densidade_ar * 1e9
+            altura_cm = 300000  # 3km em cm
+            densidade_ar = 2.5e19  # molec/cm³
+            no2_ppb = (mean_value / altura_cm) / densidade_ar * 1e9
             
             logger.info(f"✅ TEMPO NO2: {no2_ppb:.2f} ppb (mean={mean_value:.2e} molec/cm²)")
             
@@ -176,53 +210,89 @@ class EarthEngineService:
         
         if not EarthEngineService._initialized:
             return None
-        
+
         try:
-            if date is None:
-                date = datetime.utcnow().strftime('%Y-%m-%d')
-            
-            # Earth Engine precisa de range (início e fim diferentes)
-            date_obj = datetime.strptime(date, '%Y-%m-%d')
-            end_date = (date_obj + timedelta(days=1)).strftime('%Y-%m-%d')
-            
+            # Tentar múltiplas datas se nenhuma for especificada
+            # Usar datas recentes de 2025 (dados atuais!)
+            dates_to_try = [
+                '2025-09-25',  # Setembro 2025 (dados mais recentes)
+                '2025-09-20',
+                '2025-09-15',
+                '2025-09-10',
+                '2025-08-25',  # Agosto 2025
+                '2025-08-20',
+                '2025-08-15',
+                '2025-08-10',
+                '2025-07-25',  # Julho 2025
+                '2025-07-20',
+                '2025-07-15'
+            ] if date is None else [date]
+
+            # Aumentar raio de busca para 25km
+            search_radius_km = 25.0
+
             # Criar geometria
             point = ee.Geometry.Point([lon, lat])
-            area = point.buffer(radius_km * 1000)
-            
-            # Dataset Sentinel-5P NO2
-            s5p = ee.ImageCollection('COPERNICUS/S5P/NRTI/L3_NO2')
-            
-            # Filtrar por data e região (range de date até end_date)
-            images = s5p.filterDate(date, end_date).filterBounds(area)
-            
-            count = images.size().getInfo()
-            if count == 0:
-                logger.info(f"⚠️ No Sentinel-5P data for {date}")
-                return None
-            
-            logger.info(f"✅ Found {count} Sentinel-5P images")
-            
-            # Pegar primeira imagem
-            image = images.first()
-            no2_band = image.select('NO2_column_number_density')
-            
-            # Extrair estatísticas
-            stats = no2_band.reduceRegion(
-                reducer=ee.Reducer.mean(),
-                geometry=area,
-                scale=1000,
-                maxPixels=1e9
-            ).getInfo()
-            
-            mean_value = stats.get('NO2_column_number_density_mean')
-            
+            area = point.buffer(search_radius_km * 1000)
+
+            logger.info(f"🔍 Searching Sentinel-5P with {search_radius_km}km radius, trying {len(dates_to_try)} dates")
+
+            # Tentar cada data até encontrar dados válidos
+            for test_date in dates_to_try:
+                # Earth Engine precisa de range (início e fim diferentes)
+                date_obj = datetime.strptime(test_date, '%Y-%m-%d')
+                end_date = (date_obj + timedelta(days=1)).strftime('%Y-%m-%d')
+
+                # Dataset Sentinel-5P NO2
+                s5p = ee.ImageCollection('COPERNICUS/S5P/NRTI/L3_NO2')
+
+                # Filtrar por data e região (range de date até end_date)
+                images = s5p.filterDate(test_date, end_date).filterBounds(area)
+
+                count = images.size().getInfo()
+                if count == 0:
+                    logger.info(f"⚠️ No Sentinel-5P images for {test_date}, trying next date...")
+                    continue
+
+                logger.info(f"✅ Found {count} Sentinel-5P images for {test_date}")
+
+                # Pegar primeira imagem
+                image = images.first()
+                no2_band = image.select('NO2_column_number_density')
+
+                # Extrair estatísticas
+                stats = no2_band.reduceRegion(
+                    reducer=ee.Reducer.mean(),
+                    geometry=area,
+                    scale=1000,
+                    maxPixels=1e9
+                ).getInfo()
+
+                mean_value = stats.get('NO2_column_number_density_mean')
+
+                if mean_value is None:
+                    logger.warning(f"⚠️ No valid NO2 values for {test_date}, trying next date...")
+                    continue
+
+                # Sucesso! Encontrou dados válidos
+                logger.info(f"✅ Valid Sentinel-5P data found for {test_date}")
+                date = test_date
+                break
+
+            # Se não encontrou dados em nenhuma data
             if mean_value is None:
+                logger.warning(f"⚠️ No valid Sentinel-5P NO2 values after trying {len(dates_to_try)} dates")
                 return None
             
             # Converter mol/m² para ppb (aproximado)
-            # Assumindo altura de coluna troposférica ~3km
-            no2_ugm3 = (mean_value * 46.01 * 1e6) / 3000  # μg/m³
-            no2_ppb = no2_ugm3 * 0.532  # Fator de conversão aproximado
+            # mol/m² -> molec/m² -> molec/cm³ -> ppb
+            # 1 mol = 6.022e23 molec
+            # altura troposférica ~3000m
+            # densidade ar ~2.5e19 molec/cm³
+            molec_m2 = mean_value * 6.022e23  # mol/m² -> molec/m²
+            molec_cm3 = molec_m2 / (3000 * 100)  # dividir por altura em cm
+            densidade_ar = 2.5e19  # molec/cm³
+            no2_ppb = (molec_cm3 / densidade_ar) * 1e9
             
             logger.info(f"✅ Sentinel-5P NO2: {no2_ppb:.2f} ppb")
             
