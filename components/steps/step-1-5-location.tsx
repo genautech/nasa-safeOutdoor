@@ -1,14 +1,32 @@
+/**
+ * IMPORTANT: This file is step-1-5-location.tsx (with HYPHENS)
+ * Do NOT create step-1.5-location.tsx (with PERIOD)
+ * The import in app/page.tsx uses the hyphen version
+ */
+
 "use client"
 
 import { useState } from "react"
 import { motion } from "framer-motion"
-import { MapPin, Route, Search, Navigation, Plus, Info } from "lucide-react"
+import { MapPin, Route, Info, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { MapPreview } from "@/components/map-preview"
-import { WaypointItem } from "@/components/waypoint-item"
 import type { LocationData } from "@/lib/types"
-import { mockLocationData, mockRouteData } from "@/lib/mock-data"
+import { LocationSearch } from "@/components/location-search"
+import dynamic from "next/dynamic"
+
+// Import map dynamically to avoid SSR issues
+const LocationMap = dynamic(
+  () => import("@/components/location-map").then((mod) => mod.LocationMap),
+  { ssr: false, loading: () => <div className="w-full h-full bg-muted animate-pulse rounded-lg" /> }
+)
+
+interface Location {
+  name: string
+  displayName: string
+  lat: number
+  lon: number
+  type: string
+}
 
 interface Step1_5LocationProps {
   onNext: () => void
@@ -18,37 +36,83 @@ interface Step1_5LocationProps {
 
 export function Step1_5Location({ onNext, onBack, onLocationSelect }: Step1_5LocationProps) {
   const [mode, setMode] = useState<"single" | "route">("single")
-  const [locationData, setLocationData] = useState<LocationData>(mockLocationData)
-  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedLocation, setSelectedLocation] = useState<Location>({
+    name: "New York, Central Park",
+    displayName: "Central Park, New York, NY, USA",
+    lat: 40.7829,
+    lon: -73.9654,
+    type: "park"
+  })
+  const [routeStart, setRouteStart] = useState<Location | null>(null)
+  const [routeEnd, setRouteEnd] = useState<Location | null>(null)
 
   const handleModeChange = (newMode: "single" | "route") => {
     setMode(newMode)
-    if (newMode === "single") {
-      setLocationData(mockLocationData)
-    } else {
-      setLocationData(mockRouteData)
-    }
+  }
+
+  const calculateDistance = (start: Location, end: Location): string => {
+    const R = 6371 // Earth radius in km
+    const dLat = (end.lat - start.lat) * Math.PI / 180
+    const dLon = (end.lon - start.lon) * Math.PI / 180
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(start.lat * Math.PI / 180) * Math.cos(end.lat * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+    return (R * c).toFixed(1)
   }
 
   const handleNext = () => {
+    if (mode === "single") {
+      // Create LocationData for single location
+      const locationData: LocationData = {
+        mode: "single",
+        single: {
+          id: "selected-location",
+          city: selectedLocation.name,
+          address: selectedLocation.displayName,
+          lat: selectedLocation.lat,
+          lon: selectedLocation.lon,
+        }
+      }
+      onLocationSelect(locationData)
+    } else {
+      // Create LocationData for route
+      if (routeStart && routeEnd) {
+        const distance = parseFloat(calculateDistance(routeStart, routeEnd))
+        const locationData: LocationData = {
+          mode: "route",
+          route: {
+            waypoints: [
+              {
+                id: "start",
+                city: routeStart.name,
+                address: routeStart.displayName,
+                lat: routeStart.lat,
+                lon: routeStart.lon,
+                order: 0,
+              },
+              {
+                id: "end",
+                city: routeEnd.name,
+                address: routeEnd.displayName,
+                lat: routeEnd.lat,
+                lon: routeEnd.lon,
+                order: 1,
+              }
+            ],
+            totalDistance: distance,
+            estimatedDuration: Math.round(distance * 3), // 3 min per km estimate
+          }
+        }
     onLocationSelect(locationData)
+      }
+    }
     onNext()
   }
 
-  const handleRemoveWaypoint = (id: string) => {
-    if (locationData.mode === "route" && locationData.route) {
-      const updatedWaypoints = locationData.route.waypoints.filter((w) => w.id !== id)
-      setLocationData({
-        ...locationData,
-        route: {
-          ...locationData.route,
-          waypoints: updatedWaypoints,
-        },
-      })
-    }
-  }
-
-  const isValid = mode === "single" ? !!locationData.single : (locationData.route?.waypoints.length ?? 0) >= 2
+  const isValid = mode === "single" ? 
+    (selectedLocation.lat !== 0 && selectedLocation.lon !== 0) : 
+    (routeStart !== null && routeEnd !== null)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-forest-50 via-sky-50 to-forest-50 dark:from-forest-950 dark:via-sky-950 dark:to-forest-950">
@@ -70,8 +134,8 @@ export function Step1_5Location({ onNext, onBack, onLocationSelect }: Step1_5Loc
                 onClick={() => handleModeChange("single")}
                 className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-full font-semibold text-sm transition-all duration-200 ${
                   mode === "single"
-                    ? "bg-primary text-white shadow-md"
-                    : "bg-transparent text-[#6b7280] dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                    ? "bg-black text-white shadow-md"
+                    : "bg-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
                 }`}
               >
                 <MapPin className="h-4 w-4" />
@@ -81,8 +145,8 @@ export function Step1_5Location({ onNext, onBack, onLocationSelect }: Step1_5Loc
                 onClick={() => handleModeChange("route")}
                 className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-full font-semibold text-sm transition-all duration-200 ${
                   mode === "route"
-                    ? "bg-primary text-white shadow-md"
-                    : "bg-transparent text-[#6b7280] dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                    ? "bg-black text-white shadow-md"
+                    : "bg-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
                 }`}
               >
                 <Route className="h-4 w-4" />
@@ -90,90 +154,99 @@ export function Step1_5Location({ onNext, onBack, onLocationSelect }: Step1_5Loc
               </button>
             </div>
 
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-              <Input
-                placeholder={mode === "single" ? "Search city or address..." : "Add waypoint..."}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-12 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-              <Button
-                size="icon"
-                variant="ghost"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8"
-                title="Use current location"
-              >
-                <Navigation className="h-4 w-4" />
-              </Button>
-            </div>
-
-            {mode === "single" && locationData.single && (
+            {mode === "single" ? (
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.3 }}
                 className="space-y-4"
               >
-                <MapPreview mode="single" location={locationData.single} className="h-[200px]" />
+                <LocationSearch
+                  onLocationSelect={setSelectedLocation}
+                  defaultValue={selectedLocation.displayName}
+                />
 
-                <div className="bg-card rounded-xl p-4 border border-border space-y-2 hover:border-[#10b981]/50 transition-colors duration-200 cursor-pointer">
-                  <h3 className="font-semibold">{locationData.single.city}</h3>
-                  <p className="text-sm text-muted-foreground">{locationData.single.address}</p>
+                <div className="h-[calc(100vh-400px)] min-h-[300px]">
+                  <LocationMap
+                    lat={selectedLocation.lat}
+                    lon={selectedLocation.lon}
+                    locationName={selectedLocation.name}
+                    onMapClick={(lat, lon) => {
+                      setSelectedLocation({
+                        name: "Custom Location",
+                        displayName: `${lat.toFixed(4)}, ${lon.toFixed(4)}`,
+                        lat,
+                        lon,
+                        type: "custom"
+                      })
+                    }}
+                  />
+                </div>
+
+                <div className="bg-card rounded-xl p-4 border border-border space-y-2 hover:border-green-500/50 transition-colors duration-200">
+                  <h3 className="font-semibold">{selectedLocation.name}</h3>
+                  <p className="text-sm text-muted-foreground">{selectedLocation.displayName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {locationData.single.lat.toFixed(4)}, {locationData.single.lon.toFixed(4)}
+                    {selectedLocation.lat.toFixed(4)}, {selectedLocation.lon.toFixed(4)}
                   </p>
                 </div>
               </motion.div>
-            )}
-
-            {mode === "route" && locationData.route && (
+            ) : (
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.3 }}
                 className="space-y-4"
               >
-                <MapPreview mode="route" waypoints={locationData.route.waypoints} className="h-[200px]" />
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Starting Point</label>
+                    <LocationSearch
+                      onLocationSelect={setRouteStart}
+                      defaultValue={routeStart?.displayName}
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  {locationData.route.waypoints
-                    .sort((a, b) => a.order - b.order)
-                    .map((waypoint, index) => (
-                      <WaypointItem
-                        key={waypoint.id}
-                        waypoint={waypoint}
-                        isFirst={index === 0}
-                        isLast={index === locationData.route!.waypoints.length - 1}
-                        onRemove={() => handleRemoveWaypoint(waypoint.id)}
-                      />
-                    ))}
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Destination</label>
+                    <LocationSearch
+                      onLocationSelect={setRouteEnd}
+                      defaultValue={routeEnd?.displayName}
+                    />
+                  </div>
                 </div>
 
-                <Button variant="outline" className="w-full bg-transparent" disabled>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add waypoint
-                </Button>
+                {routeStart && routeEnd && (
+                  <>
+                    <div className="h-[calc(100vh-500px)] min-h-[300px]">
+                      <LocationMap
+                        lat={(routeStart.lat + routeEnd.lat) / 2}
+                        lon={(routeStart.lon + routeEnd.lon) / 2}
+                        locationName={`Route: ${routeStart.name} → ${routeEnd.name}`}
+                      />
+                    </div>
 
-                <div className="bg-card rounded-xl p-4 border border-border">
+                    <div className="bg-card rounded-xl p-4 border border-border">
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
-                      <p className="text-2xl font-bold text-forest-600">{locationData.route.totalDistance}</p>
+                          <p className="text-2xl font-bold text-forest-600">{calculateDistance(routeStart, routeEnd)}</p>
                       <p className="text-xs text-muted-foreground">km</p>
                     </div>
                     <div>
                       <p className="text-2xl font-bold text-sky-600">
-                        {Math.floor(locationData.route.estimatedDuration / 60)}h{" "}
-                        {locationData.route.estimatedDuration % 60}m
+                            {Math.floor(parseFloat(calculateDistance(routeStart, routeEnd)) * 3 / 60)}h{" "}
+                            {Math.round(parseFloat(calculateDistance(routeStart, routeEnd)) * 3 % 60)}m
                       </p>
                       <p className="text-xs text-muted-foreground">duration</p>
                     </div>
                     <div>
-                      <p className="text-2xl font-bold text-forest-600">{locationData.route.waypoints.length + 3}</p>
+                          <p className="text-2xl font-bold text-forest-600">5</p>
                       <p className="text-xs text-muted-foreground">checkpoints</p>
                     </div>
                   </div>
                 </div>
+                  </>
+                )}
               </motion.div>
             )}
 
@@ -193,15 +266,18 @@ export function Step1_5Location({ onNext, onBack, onLocationSelect }: Step1_5Loc
               </div>
             </motion.div>
 
-            <div className="flex gap-4 pt-4">
-              <Button variant="outline" onClick={onBack} size="lg" className="flex-1 bg-transparent">
+            <div className="flex justify-center gap-3 pt-4">
+              <Button 
+                variant="outline" 
+                onClick={onBack} 
+                className="flex-1 max-w-[200px]"
+              >
                 Back
               </Button>
               <Button 
                 onClick={handleNext} 
-                disabled={!isValid}
-                size="lg" 
-                className="flex-1 bg-primary hover:bg-primary/90"
+                disabled={!isValid} 
+                className="flex-1 max-w-[200px] bg-black text-white hover:bg-black/90 disabled:bg-gray-300 disabled:text-gray-500"
               >
                 Next
               </Button>
@@ -212,13 +288,38 @@ export function Step1_5Location({ onNext, onBack, onLocationSelect }: Step1_5Loc
 
       <div className="hidden lg:block h-screen">
         <div className="grid grid-cols-[60%_40%] h-full">
-          <div className="relative">
-            <MapPreview
-              mode={mode}
-              location={mode === "single" ? locationData.single : undefined}
-              waypoints={mode === "route" ? locationData.route?.waypoints : undefined}
-              className="h-full rounded-none"
-            />
+          <div className="relative h-full">
+            <div className="absolute inset-0">
+              {mode === "single" ? (
+                <LocationMap
+                  lat={selectedLocation.lat}
+                  lon={selectedLocation.lon}
+                  locationName={selectedLocation.name}
+                  onMapClick={(lat, lon) => {
+                    setSelectedLocation({
+                      name: "Custom Location",
+                      displayName: `${lat.toFixed(4)}, ${lon.toFixed(4)}`,
+                      lat,
+                      lon,
+                      type: "custom"
+                    })
+                  }}
+                />
+              ) : routeStart && routeEnd ? (
+                <LocationMap
+                  lat={(routeStart.lat + routeEnd.lat) / 2}
+                  lon={(routeStart.lon + routeEnd.lon) / 2}
+                  locationName={`Route: ${routeStart.name} → ${routeEnd.name}`}
+                />
+              ) : (
+                <div className="w-full h-full bg-muted flex items-center justify-center">
+                  <p className="text-muted-foreground">Select start and end points to see route</p>
+                </div>
+              )}
+            </div>
+            <div className="absolute top-4 right-4 z-10 bg-white dark:bg-gray-800 px-4 py-2 rounded-full shadow-lg">
+              <span className="text-sm font-medium">Step 2 of 5</span>
+            </div>
           </div>
 
           <div className="bg-background border-l border-border overflow-y-auto">
@@ -233,8 +334,8 @@ export function Step1_5Location({ onNext, onBack, onLocationSelect }: Step1_5Loc
                   onClick={() => handleModeChange("single")}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-full font-semibold text-sm transition-all duration-200 ${
                     mode === "single"
-                      ? "bg-primary text-white shadow-md"
-                      : "bg-transparent text-[#6b7280] dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                      ? "bg-black text-white shadow-md"
+                      : "bg-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
                   }`}
                 >
                   <MapPin className="h-4 w-4" />
@@ -244,8 +345,8 @@ export function Step1_5Location({ onNext, onBack, onLocationSelect }: Step1_5Loc
                   onClick={() => handleModeChange("route")}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-full font-semibold text-sm transition-all duration-200 ${
                     mode === "route"
-                      ? "bg-primary text-white shadow-md"
-                      : "bg-transparent text-[#6b7280] dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                      ? "bg-black text-white shadow-md"
+                      : "bg-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
                   }`}
                 >
                   <Route className="h-4 w-4" />
@@ -253,77 +354,63 @@ export function Step1_5Location({ onNext, onBack, onLocationSelect }: Step1_5Loc
                 </button>
               </div>
 
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                <Input
-                  placeholder={mode === "single" ? "Search city or address..." : "Add waypoint..."}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 pr-12 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8"
-                  title="Use current location"
-                >
-                  <Navigation className="h-4 w-4" />
-                </Button>
-              </div>
-
-              {mode === "single" && locationData.single && (
-                <div className="bg-card rounded-xl p-4 border border-border space-y-2 hover:border-[#10b981]/50 transition-colors duration-200 cursor-pointer">
-                  <h3 className="font-semibold text-lg">{locationData.single.city}</h3>
-                  <p className="text-sm text-muted-foreground">{locationData.single.address}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {locationData.single.lat.toFixed(4)}, {locationData.single.lon.toFixed(4)}
-                  </p>
-                </div>
-              )}
-
-              {mode === "route" && locationData.route && (
+              {mode === "single" ? (
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    {locationData.route.waypoints
-                      .sort((a, b) => a.order - b.order)
-                      .map((waypoint, index) => (
-                        <WaypointItem
-                          key={waypoint.id}
-                          waypoint={waypoint}
-                          isFirst={index === 0}
-                          isLast={index === locationData.route!.waypoints.length - 1}
-                          onRemove={() => handleRemoveWaypoint(waypoint.id)}
-                        />
-                      ))}
+                  <LocationSearch
+                    onLocationSelect={setSelectedLocation}
+                    defaultValue={selectedLocation.displayName}
+                  />
+
+                  <div className="bg-card rounded-xl p-4 border border-border space-y-2 hover:border-green-500/50 transition-colors duration-200">
+                    <h3 className="font-semibold text-lg">{selectedLocation.name}</h3>
+                    <p className="text-sm text-muted-foreground">{selectedLocation.displayName}</p>
+                  <p className="text-xs text-muted-foreground">
+                      {selectedLocation.lat.toFixed(4)}, {selectedLocation.lon.toFixed(4)}
+                  </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">Starting Point</label>
+                      <LocationSearch
+                        onLocationSelect={setRouteStart}
+                        defaultValue={routeStart?.displayName}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">Destination</label>
+                      <LocationSearch
+                        onLocationSelect={setRouteEnd}
+                        defaultValue={routeEnd?.displayName}
+                      />
+                    </div>
                   </div>
 
-                  <Button variant="outline" className="w-full bg-transparent" disabled>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add waypoint
-                  </Button>
-
+                  {routeStart && routeEnd && (
                   <div className="bg-card rounded-xl p-6 border border-border">
                     <h3 className="font-semibold mb-4">Route Statistics</h3>
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-muted-foreground">Total Distance</span>
-                        <span className="text-lg font-bold text-forest-600">{locationData.route.totalDistance} km</span>
+                          <span className="text-lg font-bold text-forest-600">{calculateDistance(routeStart, routeEnd)} km</span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-muted-foreground">Estimated Duration</span>
                         <span className="text-lg font-bold text-sky-600">
-                          {Math.floor(locationData.route.estimatedDuration / 60)}h{" "}
-                          {locationData.route.estimatedDuration % 60}m
+                            {Math.floor(parseFloat(calculateDistance(routeStart, routeEnd)) * 3 / 60)}h{" "}
+                            {Math.round(parseFloat(calculateDistance(routeStart, routeEnd)) * 3 % 60)}m
                         </span>
                       </div>
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-muted-foreground">Air Quality Checkpoints</span>
-                        <span className="text-lg font-bold text-forest-600">
-                          {locationData.route.waypoints.length + 3}
-                        </span>
+                          <span className="text-lg font-bold text-forest-600">5</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
 
@@ -338,15 +425,18 @@ export function Step1_5Location({ onNext, onBack, onLocationSelect }: Step1_5Loc
                 </div>
               </div>
 
-              <div className="flex gap-4 pt-4">
-                <Button variant="outline" onClick={onBack} size="lg" className="flex-1 bg-transparent">
+              <div className="flex justify-center gap-3 pt-4">
+                <Button 
+                  variant="outline" 
+                  onClick={onBack} 
+                  className="flex-1 max-w-[200px]"
+                >
                   Back
                 </Button>
                 <Button 
                   onClick={handleNext} 
-                  disabled={!isValid}
-                  size="lg" 
-                  className="flex-1 bg-primary hover:bg-primary/90"
+                  disabled={!isValid} 
+                  className="flex-1 max-w-[200px] bg-black text-white hover:bg-black/90 disabled:bg-gray-300 disabled:text-gray-500"
                 >
                   Next
                 </Button>

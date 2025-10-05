@@ -1,0 +1,52 @@
+# SafeOutdoor Project Rules
+
+## File Naming Convention
+
+### Step Files
+- Step files MUST use HYPHENS: `step-1-5-location.tsx`
+- Do NOT use periods: `step-1.5-location.tsx`
+- Always check existing imports in `app/page.tsx` before creating new step files
+- Delete duplicate/old versions immediately to prevent confusion
+
+### Component Files
+- Use kebab-case for component files: `location-search.tsx`
+- Use PascalCase for component names: `LocationSearch`
+
+## Import Verification
+Before creating a new file:
+1. Check what naming pattern is used in `app/page.tsx`
+2. Verify no duplicate files exist
+3. If duplicates exist, delete the unused versions
+
+## Code Style
+
+### Buttons
+- Primary actions: `bg-black text-white hover:bg-black/90`
+- Secondary actions: `variant="outline"`
+- Disabled state: `disabled:bg-gray-300 disabled:text-gray-500`
+- Center buttons with: `flex justify-center gap-3`
+- Max width: `max-w-[200px]`
+
+### Tabs
+- Active tab: `bg-black text-white shadow-md`
+- Inactive tab: `bg-transparent text-gray-600 dark:text-gray-400`
+- Container: `bg-gray-100 dark:bg-gray-800 rounded-full`
+
+### Maps
+- Desktop: Use `absolute inset-0` for full height
+- Mobile: Use `h-[calc(100vh-400px)] min-h-[300px]`
+- Always wrap LocationMap in a sized container
+
+## Project Structure
+- `/components/steps/` - Step components for multi-step flow
+- `/components/ui/` - Reusable UI components
+- `/components/` - Feature-specific components
+- `/lib/` - Utilities, types, and API functions
+- `/app/` - Next.js app router pages
+
+## Common Mistakes to Avoid
+1. Creating files with wrong naming (period vs hyphen)
+2. Not deleting duplicate/test files
+3. Using green buttons (should be black)
+4. Not centering buttons properly
+5. Map containers without proper height
