@@ -193,7 +193,7 @@ async def _fetch_via_gibs(lat: float, lon: float) -> Optional[Dict]:
                         
                         return {
                             "no2_ppb": round(no2_ppb, 2),
-                    "no2_column": no2_column,
+                            "no2_column": no2_column,
                             "quality_flag": 0,
                             "timestamp": datetime.utcnow().isoformat(),
                             "source": "NASA TEMPO (GIBS)"
@@ -212,21 +212,21 @@ async def _fetch_via_gibs(lat: float, lon: float) -> Optional[Dict]:
         return None
     except httpx.HTTPStatusError as e:
         logger.warning(f"GIBS API HTTP error: {e.response.status_code}")
-                return None
-        except Exception as e:
+        return None
+    except Exception as e:
         logger.error(f"GIBS API error: {e}")
-    return None
+        return None
 
 
 def is_tempo_coverage(lat: float, lon: float) -> bool:
     """
     Check if a location is within TEMPO satellite coverage area.
-        
-        Args:
+    
+    Args:
         lat: Latitude (-90 to 90)
         lon: Longitude (-180 to 180)
-            
-        Returns:
+    
+    Returns:
         True if location is covered by TEMPO, False otherwise
     """
     return (TEMPO_LAT_MIN <= lat <= TEMPO_LAT_MAX and 
