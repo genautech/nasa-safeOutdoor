@@ -105,29 +105,28 @@ class TEMPOService:
                 time_start = granule.get("time_start")
                 links = granule.get("links", [])
                 
-                # Find direct data URL (not OPeNDAP - it returns 404)
-                # Use direct download link from asdc which works with authentication
-                data_url = None
+                # Find OPeNDAP service URL
+                opendap_url = None
                 for link in links:
                     href = link.get("href", "")
                     rel = link.get("rel", "")
                     
-                    # Look for direct data link from asdc
-                    if "data.asdc.earthdata.nasa.gov" in href and href.endswith(".nc"):
-                        data_url = href
+                    # Look for OPeNDAP service link
+                    if "opendap.earthdata.nasa.gov" in href or "service#" in rel:
+                        opendap_url = href
                         break
                 
-                if not data_url:
-                    logger.warning(f"⚠️ No data URL found in granule links")
+                if not opendap_url:
+                    logger.warning(f"⚠️ No OPeNDAP URL found in granule links")
                     return None
                 
                 logger.info(f"✅ Found TEMPO granule: {title}")
-                logger.debug(f"🔗 Data URL: {data_url}")
+                logger.debug(f"🔗 OPeNDAP URL: {opendap_url}")
                 
                 return {
                     "title": title,
                     "time_start": time_start,
-                    "opendap_url": data_url
+                    "opendap_url": opendap_url
                 }
                 
         except httpx.TimeoutException:
@@ -181,30 +180,29 @@ class TEMPOService:
             loop = asyncio.get_event_loop()
             
             def open_dataset():
-                # Download file with authentication
-                import tempfile
-                import httpx
+                # Use pydap with custom session for Bearer token authentication
+                from pydap.client import open_url
+                from pydap.cas.urs import setup_session
+                import requests
                 
-                # Use Bearer token authentication
-                headers = {
-                    "Authorization": f"Bearer {settings.nasa_earthdata_token}"
-                }
+                # Create authenticated session with Bearer token
+                session = requests.Session()
+                session.headers.update({
+                    'Authorization': f'Bearer {settings.nasa_earthdata_token}'
+                })
                 
-                with httpx.Client(headers=headers, follow_redirects=True) as client:
-                    response = client.get(opendap_url)
-                    response.raise_for_status()
-                    
-                    # Save to temp file
-                    with tempfile.NamedTemporaryFile(delete=False, suffix='.nc') as tmp:
-                        tmp.write(response.content)
-                        tmp_path = tmp.name
-                    
-                    # Open with xarray
-                    return xr.open_dataset(
-                        tmp_path,
-                        group='product',
-                        decode_times=False
-                    )
+                # Open OPeNDAP URL with authenticated session
+                # pydap handles the OPeNDAP protocol with the session
+                dataset = open_url(opendap_url, session=session)
+                
+                # Convert to xarray for easier manipulation
+                import xarray as xr
+                ds = xr.open_dataset(
+                    xr.backends.PydapDataStore(dataset),
+                    decode_times=False
+                )
+                
+                return ds
             
             ds = await loop.run_in_executor(None, open_dataset)
             
