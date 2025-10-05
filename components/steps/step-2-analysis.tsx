@@ -245,7 +245,7 @@ export function Step2Analysis({ onNext, onBack, adventureContext, onAnalysisComp
               className="space-y-8"
             >
               <SafetyScore 
-                score={analysisData ? Math.round(analysisData.risk_score * 10) : getMockSafetyAnalysis(adventureContext?.activity || "Hiking", adventureContext?.location || null).score} 
+                score={analysisData ? analysisData.risk_score : getMockSafetyAnalysis(adventureContext?.activity || "Hiking", adventureContext?.location || null).score} 
                 showAnimation 
               />
 

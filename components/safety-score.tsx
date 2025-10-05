@@ -11,7 +11,10 @@ interface SafetyScoreProps {
 
 export function SafetyScore({ score, showAnimation = false }: SafetyScoreProps) {
   const count = useMotionValue(0)
-  const rounded = useTransform(count, (latest) => Math.round(latest * 10) / 10)
+  const rounded = useTransform(count, (latest) => {
+    // Round to 1 decimal place and return as string
+    return (Math.round(latest * 10) / 10).toFixed(1)
+  })
 
   useEffect(() => {
     if (showAnimation) {
