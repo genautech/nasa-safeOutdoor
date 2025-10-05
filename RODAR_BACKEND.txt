@@ -1,0 +1,12 @@
+# === INSTRUCOES PARA RODAR O BACKEND ===
+
+# 1. Abra um novo PowerShell no diretorio do projeto safe-outdoor-app
+
+# 2. Execute os comandos abaixo um por um:
+
+cd backend
+.\venv\Scripts\Activate.ps1
+pip install fastapi uvicorn httpx pydantic pydantic-settings python-dotenv openai
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+# Pronto! O backend estara rodando em http://localhost:8000

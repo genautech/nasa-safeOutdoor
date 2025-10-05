@@ -1,6 +1,11 @@
 import axios, { AxiosError } from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// FORCE LOCAL DEVELOPMENT
+const API_URL = 'http://localhost:8000';
+
+// Debug: Log the API URL being used
+console.log('🔍 [API Config] Using API URL:', API_URL);
+console.log('🔍 [API Config] NEXT_PUBLIC_API_URL env var:', process.env.NEXT_PUBLIC_API_URL);
 
 // Configure axios defaults
 const apiClient = axios.create({

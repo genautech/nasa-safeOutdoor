@@ -14,16 +14,12 @@ Authentication: Requires NASA EarthData credentials
 """
 import httpx
 import logging
-import os
 from typing import Optional, Dict
 from datetime import datetime, timedelta
 import asyncio
+from app.config import settings
 
 logger = logging.getLogger(__name__)
-
-# NASA EarthData credentials (from environment variables)
-NASA_USER = os.getenv("NASA_EARTHDATA_USER")
-NASA_PASSWORD = os.getenv("NASA_EARTHDATA_PASSWORD")
 
 
 class TEMPOService:
@@ -173,7 +169,7 @@ class TEMPOService:
             logger.debug(f"🔗 OPeNDAP URL: {opendap_url}")
             
             # Check if NASA credentials are configured
-            if not NASA_USER or not NASA_PASSWORD:
+            if not settings.nasa_earthdata_user or not settings.nasa_earthdata_password:
                 logger.error(
                     "❌ NASA EarthData credentials not configured! "
                     "Set NASA_EARTHDATA_USER and NASA_EARTHDATA_PASSWORD environment variables."
@@ -190,7 +186,7 @@ class TEMPOService:
                 import httpx
                 
                 # Create authenticated session
-                with httpx.Client(auth=(NASA_USER, NASA_PASSWORD), follow_redirects=True) as client:
+                with httpx.Client(auth=(settings.nasa_earthdata_user, settings.nasa_earthdata_password), follow_redirects=True) as client:
                     response = client.get(opendap_url)
                     response.raise_for_status()
                     
