@@ -46,43 +46,104 @@ async def fetch_openaq_data(lat: float, lon: float, radius_km: int = 25) -> Opti
     async with httpx.AsyncClient(timeout=10.0) as client:
         for attempt in range(3):
             try:
-                logger.info(f"Fetching OpenAQ v3 data for ({lat}, {lon}) - Attempt {attempt + 1}/3")
+                logger.info(f"🔍 OpenAQ v3 attempt {attempt + 1}/3 for ({lat}, {lon})")
+                logger.info(f"📡 Request URL: {base_url}")
+                logger.info(f"📋 Params: {params}")
                 
                 response = await client.get(base_url, headers=headers, params=params)
                 response.raise_for_status()
                 data = response.json()
                 
-                # v3 has different structure: results[].latest{}
+                # ===== CRITICAL DEBUG: Log raw API response =====
+                logger.info(f"🔍 OpenAQ v3 RAW RESPONSE: {data}")
+                logger.info(f"🔍 Response keys: {list(data.keys())}")
+                
                 results = data.get("results", [])
+                logger.info(f"🔍 Found {len(results)} results")
                 
                 if not results:
-                    logger.warning(f"No OpenAQ stations found within {radius_km}km")
+                    logger.warning(f"⚠️ No OpenAQ stations found within {radius_km}km of ({lat}, {lon})")
                     return None
+                
+                # Debug first result structure
+                if results:
+                    logger.info(f"🔍 First result keys: {list(results[0].keys())}")
+                    logger.info(f"🔍 First result: {results[0]}")
                 
                 pm25_values = []
                 no2_values = []
                 latest_timestamp = None
                 
-                for location in results:
-                    # Get latest measurements for this location
+                for idx, location in enumerate(results):
+                    logger.info(f"🔍 Processing location {idx + 1}/{len(results)}")
+                    
+                    # Try multiple possible structures
+                    # Structure 1: results[].latest{} (documented)
                     latest = location.get("latest", {})
                     
-                    # latest is a dict with parameter names as keys
-                    for param_name, param_data in latest.items():
-                        if not param_data or not isinstance(param_data, dict):
-                            continue
+                    # Structure 2: results[].measurements[] (alternative)
+                    measurements = location.get("measurements", [])
+                    
+                    # Structure 3: results[].parameters[] (another possibility)
+                    parameters = location.get("parameters", [])
+                    
+                    logger.info(f"🔍 Location has: latest={bool(latest)}, measurements={len(measurements)}, parameters={len(parameters)}")
+                    
+                    # Try parsing latest{} structure
+                    if latest:
+                        logger.info(f"🔍 Latest keys: {list(latest.keys())}")
                         
-                        value = param_data.get("value")
-                        timestamp = param_data.get("datetime")
-                        
-                        if value is not None:
-                            if param_name == "pm25":
-                                pm25_values.append(float(value))
-                            elif param_name == "no2":
-                                no2_values.append(float(value))
+                        for param_name, param_data in latest.items():
+                            logger.info(f"🔍 Param: {param_name}, Data type: {type(param_data)}, Data: {param_data}")
                             
-                            if timestamp and (not latest_timestamp or timestamp > latest_timestamp):
-                                latest_timestamp = timestamp
+                            if not param_data:
+                                continue
+                            
+                            # Handle both dict and direct value
+                            if isinstance(param_data, dict):
+                                value = param_data.get("value")
+                                timestamp = param_data.get("datetime", param_data.get("lastUpdated"))
+                            elif isinstance(param_data, (int, float)):
+                                value = param_data
+                                timestamp = None
+                            else:
+                                continue
+                            
+                            if value is not None:
+                                logger.info(f"✅ Found {param_name}={value}")
+                                
+                                if param_name in ["pm25", "pm2.5", "pm_25"]:
+                                    pm25_values.append(float(value))
+                                elif param_name in ["no2", "nitrogen_dioxide"]:
+                                    no2_values.append(float(value))
+                                
+                                if timestamp and (not latest_timestamp or timestamp > latest_timestamp):
+                                    latest_timestamp = timestamp
+                    
+                    # Try parsing measurements[] structure
+                    if measurements and not pm25_values and not no2_values:
+                        logger.info(f"🔍 Trying measurements[] structure")
+                        for m in measurements:
+                            param = m.get("parameter", "")
+                            value = m.get("value")
+                            if param in ["pm25", "pm2.5"] and value:
+                                pm25_values.append(float(value))
+                            elif param in ["no2"] and value:
+                                no2_values.append(float(value))
+                    
+                    # Try parsing parameters[] structure
+                    if parameters and not pm25_values and not no2_values:
+                        logger.info(f"🔍 Trying parameters[] structure")
+                        for p in parameters:
+                            param_id = p.get("id", p.get("parameterId", ""))
+                            value = p.get("lastValue", p.get("value"))
+                            if param_id in [2, "pm25", "pm2.5"] and value:
+                                pm25_values.append(float(value))
+                            elif param_id in [7, "no2"] and value:
+                                no2_values.append(float(value))
+                
+                logger.info(f"📊 Collected {len(pm25_values)} PM2.5 values: {pm25_values}")
+                logger.info(f"📊 Collected {len(no2_values)} NO2 values: {no2_values}")
                 
                 # Calculate averages
                 pm25_avg = round(sum(pm25_values) / len(pm25_values), 2) if pm25_values else None
@@ -96,7 +157,7 @@ async def fetch_openaq_data(lat: float, lon: float, radius_km: int = 25) -> Opti
                 }
                 
                 logger.info(
-                    f"OpenAQ v3: Found {len(results)} stations, "
+                    f"✅ OpenAQ v3 SUCCESS: {len(results)} stations, "
                     f"PM2.5={pm25_avg}, NO2={no2_avg}"
                 )
                 

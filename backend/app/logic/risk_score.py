@@ -106,6 +106,10 @@ def calculate_air_quality_score(aqi: int, pm25: float) -> float:
     201-300: Very unhealthy (score 1-2.9)
     300+: Hazardous (score 0-0.9)
     """
+    # Handle null values with safe defaults
+    if aqi is None:
+        aqi = 50  # Assume moderate if no data
+    
     if aqi <= 50:
         # Linear scale from 9 to 10
         return 9.0 + (50 - aqi) / 50.0
@@ -134,12 +138,24 @@ def calculate_weather_score(weather: dict) -> float:
     """
     score = 10.0
     
-    temp_c = weather.get("temp_c", weather.get("temp", 20))
-    wind_speed_kmh = weather.get("wind_speed_kmh", weather.get("wind_speed", 10))
-    precipitation_mm = weather.get("precipitation_mm", 0)
-    humidity = weather.get("humidity", 50)
+    # Get values with null-safe defaults
+    temp_c = weather.get("temp_c", weather.get("temp"))
+    if temp_c is None:
+        temp_c = 20  # Assume moderate temp
     
-    # Temperature penalty (ideal: 15-25°C)
+    wind_speed_kmh = weather.get("wind_speed_kmh", weather.get("wind_speed"))
+    if wind_speed_kmh is None:
+        wind_speed_kmh = 10  # Assume light wind
+    
+    precipitation_mm = weather.get("precipitation_mm")
+    if precipitation_mm is None:
+        precipitation_mm = 0  # Assume no rain
+    
+    humidity = weather.get("humidity")
+    if humidity is None:
+        humidity = 50  # Assume moderate humidity
+    
+    # Temperature penalty (ideal: 15-25°C) - now safe from None
     if temp_c < -10:
         score -= 4.0  # Extreme cold
     elif temp_c < 0:
@@ -153,7 +169,7 @@ def calculate_weather_score(weather: dict) -> float:
     elif temp_c > 30:
         score -= 1.5
     
-    # Wind penalty
+    # Wind penalty - now safe from None
     if wind_speed_kmh > 60:
         score -= 3.0  # Dangerous winds
     elif wind_speed_kmh > 40:
@@ -161,7 +177,7 @@ def calculate_weather_score(weather: dict) -> float:
     elif wind_speed_kmh > 25:
         score -= 1.0
     
-    # Precipitation penalty
+    # Precipitation penalty - now safe from None
     if precipitation_mm > 50:
         score -= 3.0  # Heavy rain
     elif precipitation_mm > 20:
@@ -169,7 +185,7 @@ def calculate_weather_score(weather: dict) -> float:
     elif precipitation_mm > 5:
         score -= 1.0
     
-    # Humidity penalty (extreme values)
+    # Humidity penalty (extreme values) - now safe from None
     if humidity > 90:
         score -= 1.0  # Very humid
     elif humidity < 20:
@@ -189,6 +205,10 @@ def calculate_uv_score(uv_index: float) -> float:
     8-10: Very high (score 4-5)
     11+: Extreme (score 0-3)
     """
+    # Handle null values
+    if uv_index is None:
+        uv_index = 5.0  # Assume moderate UV
+    
     if uv_index <= 2:
         return 10.0
     elif uv_index <= 5:
@@ -213,7 +233,11 @@ def calculate_terrain_score(elevation: int, activity: str) -> float:
     """
     score = 10.0
     
-    # Elevation effects (altitude sickness risk)
+    # Handle null elevation
+    if elevation is None:
+        elevation = 0  # Assume sea level
+    
+    # Elevation effects (altitude sickness risk) - now safe from None
     if elevation > 4000:
         score -= 4.0  # Very high altitude
     elif elevation > 3000:
@@ -224,7 +248,7 @@ def calculate_terrain_score(elevation: int, activity: str) -> float:
         score -= 0.5
     
     # Activity-specific terrain difficulty
-    activity = activity.lower()
+    activity = activity.lower() if activity else ""
     
     if activity in ["mountaineering", "rock_climbing", "alpinism"]:
         # More tolerant of high elevation
@@ -246,10 +270,17 @@ def get_activity_modifier(activity: str, data: dict) -> float:
     Adjusts final score based on activity tolerance to conditions.
     """
     modifier = 0.0
-    aqi = data.get("aqi", 50)
-    temp = data.get("weather", {}).get("temp_c", 20)
     
-    activity = activity.lower()
+    # Get values with null safety
+    aqi = data.get("aqi")
+    if aqi is None:
+        aqi = 50  # Default moderate
+    
+    temp = data.get("weather", {}).get("temp_c")
+    if temp is None:
+        temp = 20  # Default moderate
+    
+    activity = activity.lower() if activity else ""
     
     # Aerobic activities more sensitive to air quality
     if activity in ["running", "cycling", "trail_running"]:
@@ -260,7 +291,9 @@ def get_activity_modifier(activity: str, data: dict) -> float:
     
     # Technical activities more sensitive to weather
     elif activity in ["rock_climbing", "mountaineering", "alpinism"]:
-        wind = data.get("weather", {}).get("wind_speed_kmh", 10)
+        wind = data.get("weather", {}).get("wind_speed_kmh")
+        if wind is None:
+            wind = 10  # Default light wind
         if wind > 30:
             modifier -= 0.2  # Wind very dangerous for climbing
     
@@ -271,7 +304,9 @@ def get_activity_modifier(activity: str, data: dict) -> float:
     
     # Water activities
     elif activity in ["kayaking", "canoeing", "paddleboarding"]:
-        wind = data.get("weather", {}).get("wind_speed_kmh", 10)
+        wind = data.get("weather", {}).get("wind_speed_kmh")
+        if wind is None:
+            wind = 10  # Default light wind
         if wind > 25:
             modifier -= 0.2  # Wind very dangerous on water
     
@@ -282,70 +317,76 @@ def generate_warnings(data: dict) -> List[str]:
     """Generate specific warnings based on conditions."""
     warnings = []
     
-    aqi = data.get("aqi", 50)
-    pm25 = data.get("pm25", 15.0)
-    uv_index = data.get("uv_index", 5.0)
+    aqi = data.get("aqi")
+    pm25 = data.get("pm25")
+    uv_index = data.get("uv_index")
     weather = data.get("weather", {})
-    elevation = data.get("elevation", 0)
+    elevation = data.get("elevation")
     activity = data.get("activity", "").lower()
     
-    # Air quality warnings
-    if aqi > 200:
-        warnings.append("⚠️ Air quality is hazardous - outdoor activity not recommended")
-    elif aqi > 150:
-        warnings.append("⚠️ Air quality unhealthy - limit outdoor exposure and take frequent breaks")
-    elif aqi > 100:
-        warnings.append("⚠️ Air quality unhealthy for sensitive groups - consider N95 mask")
+    # Air quality warnings (with null checks)
+    if aqi is not None:
+        if aqi > 200:
+            warnings.append("⚠️ Air quality is hazardous - outdoor activity not recommended")
+        elif aqi > 150:
+            warnings.append("⚠️ Air quality unhealthy - limit outdoor exposure and take frequent breaks")
+        elif aqi > 100:
+            warnings.append("⚠️ Air quality unhealthy for sensitive groups - consider N95 mask")
     
-    if pm25 > 35:
+    if pm25 is not None and pm25 > 35:
         warnings.append("⚠️ High particulate matter - respiratory protection recommended")
     
-    # UV warnings
-    if uv_index >= 11:
-        warnings.append("☀️ Extreme UV - minimize sun exposure, full protection required")
-    elif uv_index >= 8:
-        warnings.append("☀️ Very high UV - sunscreen SPF 50+, hat, and protective clothing required")
-    elif uv_index >= 6:
-        warnings.append("☀️ High UV - sunscreen and hat recommended")
+    # UV warnings (with null checks)
+    if uv_index is not None:
+        if uv_index >= 11:
+            warnings.append("☀️ Extreme UV - minimize sun exposure, full protection required")
+        elif uv_index >= 8:
+            warnings.append("☀️ Very high UV - sunscreen SPF 50+, hat, and protective clothing required")
+        elif uv_index >= 6:
+            warnings.append("☀️ High UV - sunscreen and hat recommended")
     
-    # Weather warnings
-    temp = weather.get("temp_c", 20)
-    if temp > 38:
-        warnings.append("🌡️ Extreme heat warning - high risk of heat stroke")
-    elif temp > 32:
-        warnings.append("🌡️ High temperature - stay hydrated, take frequent breaks in shade")
-    elif temp < -15:
-        warnings.append("❄️ Extreme cold - risk of frostbite and hypothermia")
-    elif temp < 0:
-        warnings.append("❄️ Below freezing - dress in layers, protect extremities")
+    # Weather warnings (with null checks)
+    temp = weather.get("temp_c")
+    if temp is not None:
+        if temp > 38:
+            warnings.append("🌡️ Extreme heat warning - high risk of heat stroke")
+        elif temp > 32:
+            warnings.append("🌡️ High temperature - stay hydrated, take frequent breaks in shade")
+        elif temp < -15:
+            warnings.append("❄️ Extreme cold - risk of frostbite and hypothermia")
+        elif temp < 0:
+            warnings.append("❄️ Below freezing - dress in layers, protect extremities")
     
-    wind = weather.get("wind_speed_kmh", 10)
-    if wind > 60:
-        warnings.append("💨 Dangerous wind speeds - outdoor activities extremely hazardous")
-    elif wind > 40:
-        warnings.append("💨 High winds - exercise extreme caution, especially on exposed terrain")
-    elif wind > 25:
-        warnings.append("💨 Moderate winds - be cautious on ridges and exposed areas")
+    wind = weather.get("wind_speed_kmh")
+    if wind is not None:
+        if wind > 60:
+            warnings.append("💨 Dangerous wind speeds - outdoor activities extremely hazardous")
+        elif wind > 40:
+            warnings.append("💨 High winds - exercise extreme caution, especially on exposed terrain")
+        elif wind > 25:
+            warnings.append("💨 Moderate winds - be cautious on ridges and exposed areas")
     
-    precip = weather.get("precipitation_mm", 0)
-    if precip > 50:
-        warnings.append("🌧️ Heavy precipitation forecast - trail conditions may be hazardous")
-    elif precip > 20:
-        warnings.append("🌧️ Moderate rain expected - bring waterproof gear")
+    precip = weather.get("precipitation_mm")
+    if precip is not None:
+        if precip > 50:
+            warnings.append("🌧️ Heavy precipitation forecast - trail conditions may be hazardous")
+        elif precip > 20:
+            warnings.append("🌧️ Moderate rain expected - bring waterproof gear")
     
-    # Elevation warnings
-    if elevation > 4000:
-        warnings.append("⛰️ Very high altitude - risk of altitude sickness, acclimatize gradually")
-    elif elevation > 3000:
-        warnings.append("⛰️ High altitude - monitor for symptoms of altitude sickness")
-    elif elevation > 2500:
-        warnings.append("⛰️ Moderate altitude - stay hydrated and pace yourself")
+    # Elevation warnings (with null checks)
+    if elevation is not None:
+        if elevation > 4000:
+            warnings.append("⛰️ Very high altitude - risk of altitude sickness, acclimatize gradually")
+        elif elevation > 3000:
+            warnings.append("⛰️ High altitude - monitor for symptoms of altitude sickness")
+        elif elevation > 2500:
+            warnings.append("⛰️ Moderate altitude - stay hydrated and pace yourself")
     
-    # Activity-specific warnings
-    if activity in ["running", "cycling", "trail_running"] and aqi > 100:
+    # Activity-specific warnings (with null checks)
+    if activity in ["running", "cycling", "trail_running"] and aqi is not None and aqi > 100:
         warnings.append("🏃 Aerobic activity with poor air quality - consider indoor alternative")
     
-    if activity in ["rock_climbing", "mountaineering"] and wind > 30:
+    if activity in ["rock_climbing", "mountaineering"] and wind is not None and wind > 30:
         warnings.append("🧗 Climbing in high winds is dangerous - consider postponing")
     
     return warnings
