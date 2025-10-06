@@ -1,11 +1,23 @@
 import axios, { AxiosError } from 'axios';
 
-// FORCE LOCAL DEVELOPMENT
-const API_URL = 'http://localhost:8000';
+/**
+ * API Configuration
+ * Priority:
+ * 1. NEXT_PUBLIC_API_URL environment variable (set in .env.local or hosting platform)
+ * 2. Production backend on Render (default fallback)
+ *
+ * For local development: set NEXT_PUBLIC_API_URL=http://localhost:8000 in .env.local
+ * For production: Configure NEXT_PUBLIC_API_URL in Vercel/Render dashboard
+ */
+const PRODUCTION_API_URL = 'https://safeoutdoor-backend-3yse.onrender.com';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || PRODUCTION_API_URL;
 
-// Debug: Log the API URL being used
-console.log('🔍 [API Config] Using API URL:', API_URL);
-console.log('🔍 [API Config] NEXT_PUBLIC_API_URL env var:', process.env.NEXT_PUBLIC_API_URL);
+// Log configuration (visible in browser console)
+if (typeof window !== 'undefined') {
+  console.log('🔍 [API Config] Using API URL:', API_URL);
+  console.log('🔍 [API Config] Environment:', process.env.NODE_ENV);
+  console.log('🔍 [API Config] Custom URL set:', !!process.env.NEXT_PUBLIC_API_URL);
+}
 
 // Configure axios defaults
 const apiClient = axios.create({
